@@ -33,18 +33,36 @@ scope does not include login. Optional overrides:
 | --- | --- | --- |
 | `BASE_URL` | `https://www.amtrak.com` | Point the suite at a different host/mirror |
 | `PW_WORKERS` | `4` | Override the parallel worker count |
-| `CI` | – | When set: 2 retries, `forbidOnly`, HTML report not opened |
+| `CI` | – | When set: `forbidOnly`, HTML report not opened |
 
 ## Running the tests
 
 ```bash
-npm test                    # full suite, 4 parallel workers, all projects
-npm run test:chromium       # Chromium only (fastest feedback)
-npm run test:smoke          # @smoke-tagged tests only
+npm test                    # the deterministic lanes: mocked-chromium + mocked-mobile
+npm run test:mocked         # same as `npm test`
+npm run test:live           # the real site (live-chromium) — bot-protected, may skip/flake
+npm run test:all            # every project (mocked + live)
+npm run test:chromium       # mocked-chromium only (fastest feedback)
+npm run test:smoke          # @smoke-tagged tests, mocked-chromium
 npm run test:headed         # watch it drive a real browser
 npm run test:ui             # Playwright's interactive UI mode
 npm run report              # open the HTML report from the last run
 ```
+
+**Two lanes.** `mocked-chromium` / `mocked-mobile` stub the live station-autocomplete
+network call (`src/support/mocks/`) so the form-fill flow is deterministic — this is the
+lane that must be green. `live-chromium` drives the real site and is allowed to flake or
+skip (bot protection). The mock replaces *one network response*, not the widget: typing,
+option rendering, value commit, `aria-disabled` validation, the trip-type/calendar/traveler
+behaviour, and the outgoing `journey-solution-option` payload all run for real. See
+[docs/FRAMEWORK.md](docs/FRAMEWORK.md) → *The two lanes*.
+
+**Location is folders, test type is tags.** `tests/{ui,api}/<domain>/` says *where* a
+test runs and *what* it covers. The type is a tag (mirrored by a `[type]` title prefix),
+exactly two values: `@smoke` (non-mutating UI interaction) and `@regression` (proceeds
+past a boundary into the app). This suite stops at the "Find trains" button click, so
+every test is `@smoke`. `--grep @smoke` slices across every domain and both platforms at
+once. One domain for this assignment — `find-trains`. See [docs/FRAMEWORK.md](docs/FRAMEWORK.md).
 
 Quality gates (also run in CI):
 
@@ -58,7 +76,7 @@ npm run check               # lint + typecheck
 
 ```
 .
-├── playwright.config.ts        # 4 workers, fullyParallel, projects, reporters, global-setup
+├── playwright.config.ts        # projects (2 mocked + 1 live), retries, reporters, global-setup
 ├── eslint.config.mjs           # flat config + the two framework guard rules
 ├── eslint-rules/
 │   └── pom-plugin.mjs          # custom rule: no raw locators / no `new *Page()` in tests
@@ -68,7 +86,9 @@ npm run check               # lint + typecheck
 │   ├── fixtures/
 │   │   └── pom.fixtures.ts     # fixture-based Page Object injection + graceful skip
 │   ├── support/
-│   │   └── consent.ts          # OneTrust cookie pre-seed
+│   │   ├── consent.ts          # OneTrust cookie pre-seed
+│   │   ├── journey-search.ts   # the search API endpoint + a pure reader for its request body
+│   │   └── mocks/              # mock lane: canned station catalog + the page.route stub
 │   └── pages/
 │       ├── base.page.ts        # shared BasePage (arrow-fn locators, navigation, no assertions)
 │       ├── home.page.ts        # HomePage — owns the FindTrainsForm component
@@ -77,10 +97,15 @@ npm run check               # lint + typecheck
 │           └── find-trains-form.component.ts   # the search widget (component object)
 ├── tests/
 │   ├── _support/global-setup.ts               # one reachability probe (non-fatal)
-│   └── find-trains/
-│       ├── form-happy-path.spec.ts
-│       ├── form-validation.spec.ts
-│       └── form-edge-cases.spec.ts
+│   ├── ui/find-trains/                        # browser-driven specs, one file per form feature
+│   │   ├── station-selection.spec.ts         # From/To autocomplete, swap, same-station rule
+│   │   ├── trip-type.spec.ts                 # One-Way / Round-Trip toggle
+│   │   ├── departure-date.spec.ts            # depart calendar constraints
+│   │   ├── passenger-selection.spec.ts       # traveler popover + steppers
+│   │   ├── promo-code.spec.ts                # coupon field
+│   │   └── search-submission.spec.ts         # Find trains button gating + firing the request
+│   └── api/find-trains/
+│       └── README.md                         # scaffold — see file for what lands here
 └── docs/
     ├── APPROACH.md             # what was tested & why, assumptions, next steps  ← start here
     ├── FRAMEWORK.md            # architecture, patterns, the guard rules, conventions
@@ -109,7 +134,7 @@ Full rationale in [docs/FRAMEWORK.md](docs/FRAMEWORK.md).
 ## Continuous integration
 
 [`.github/workflows/playwright.yml`](.github/workflows/playwright.yml) runs `lint` +
-`typecheck`, then the suite across Chromium / Firefox / WebKit in a matrix, and uploads
+`typecheck`, then `test:mocked` (the gate) and `test:live` (non-blocking), and uploads
 the HTML report as an artifact.
 
 ## Troubleshooting
@@ -117,6 +142,6 @@ the HTML report as an artifact.
 | Symptom | Cause & fix |
 | --- | --- |
 | Every test **skips** with "widget did not load" | amtrak.com is behind Akamai bot management and blocked this run (common from datacenter/CI IPs). Re-run, or run locally. The suite skips instead of failing red — this is by design. |
-| A `@smoke` happy-path test is **flaky** | The live station-autocomplete is network-bound; under 4 parallel workers a response occasionally lags. One local retry (`retries: 1`) normally absorbs it. See [docs/APPROACH.md](docs/APPROACH.md) → *Known risks*. |
+| A test is **flaky** in `mocked-chromium` | The stub removes network latency, so this should be rare — `retries: 1` covers the widget's own processing on the heaviest fills (multi-city). A genuinely stuck fill throws "Could not commit station …". If it's frequent, re-capture the mock fixtures (`src/support/mocks/`) against the live payload. Flakes in `live-chromium` are expected and non-blocking. See [docs/APPROACH.md](docs/APPROACH.md) → *Known risks*. |
 | Selectors suddenly break | Amtrak reworked the widget. Re-inspect with `npm run codegen` and update the `VERIFY:`-tagged locators in [`find-trains-form.component.ts`](src/pages/components/find-trains-form.component.ts). |
 | OneTrust cookie banner blocks clicks | Handled by [`src/support/consent.ts`](src/support/consent.ts) (cookie pre-seed) + a fallback click in `BasePage`. If Amtrak changes the CMP, update those. |

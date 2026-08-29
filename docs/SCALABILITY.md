@@ -3,6 +3,34 @@
 The brief asks to show how the framework grows to cover more of amtrak.com. Here's the
 path, cheapest first.
 
+## 0. The two axes it's already built on
+
+- **Directory = platform × domain**: `tests/ui/<domain>/`, `tests/api/<domain>/`. One
+  domain today (`find-trains`); a new area of the site (e.g. `train-status`, `account`)
+  is a new `<domain>` folder under `ui/` and/or `api/`.
+- **Tag = test type**: exactly two — `@smoke` (non-mutating UI interaction) and
+  `@regression` (proceeds past a boundary into the app). Mirrored by a `[type]` title
+  prefix. Changing a test's type is a retag, never a move. `--grep @smoke` composes across
+  every domain and platform.
+
+A file never changes directory to change its type, and a new domain never disturbs an
+existing one. See [FRAMEWORK.md](FRAMEWORK.md) → *Test organisation*.
+
+### The API layer
+
+`tests/api/find-trains/` is scaffolded (README only). Bringing it live mirrors the UI
+side exactly:
+
+```
+src/clients/amtrak-fare-finder.client.ts   # thin APIRequestContext wrapper — the "Page Object" of the API layer
+src/fixtures/api.fixtures.ts               # injects the client, same pattern as pom.fixtures.ts
+```
+
+Plus a `no-restricted-imports` guard for `tests/api/**` mirroring the POM guard, and an
+`api` project in `playwright.config.ts` (`testMatch: /tests\/api\//`, no browser → runs
+in ms). The station-autocomplete and `journey-solution-option` endpoints behind the
+widget are the first candidates.
+
 ## 1. Another region of the same page → a new component object
 
 The homepage has a global header, an alerts banner, a deals carousel. Each is a
@@ -58,8 +86,8 @@ table:
 
 ```ts
 const cases = [
-  { from: 'New York', to: 'Washington', tripType: 'one-way' },
-  { from: 'Chicago',  to: 'Boston',     tripType: 'round-trip' },
+  { from: 'New York', to: 'Washington',   tripType: 'one-way' },
+  { from: 'Boston',   to: 'Philadelphia', tripType: 'round-trip' },
 ] as const;
 
 for (const c of cases) {
@@ -74,23 +102,22 @@ for (const c of cases) {
 Move `STATIONS` to a JSON fixture when the list gets long; keep regex "expected option"
 matchers next to each entry.
 
-## 4. Faster + deterministic → a mock lane
+## 4. Faster + deterministic → the mock lane (built)
 
-Split into two projects:
+`playwright.config.ts` has three projects: `mocked-chromium` (the gate), `mocked-mobile`
+(bonus), and `live-chromium` (real site, non-blocking). The `mockAmtrakApi` fixture
+option (`src/fixtures/pom.fixtures.ts`) turns on `page.route` stubbing of the station
+autocomplete for the mocked projects, fed by a small captured catalog in
+`src/support/mocks/`. That removed the network-latency flakes; `mocked-chromium` runs
+green at `retries: 1`.
 
-```ts
-// playwright.config.ts
-projects: [
-  { name: 'live-smoke', testMatch: /@smoke/, use: { baseURL: 'https://www.amtrak.com' } },
-  { name: 'mocked',     use: { baseURL: 'https://www.amtrak.com' /* + route stubs */ } },
-]
-```
+Room to grow this lane:
 
-A `mockAmtrak` fixture uses `page.route()` to serve canned station-autocomplete and
-`journey-solution-option` payloads. The full functional suite runs against `mocked`
-(fast, no bot wall, no flake); `live-smoke` stays as the thin "the real site still works"
-check. This removes essentially all of the flakiness in
-[APPROACH.md](APPROACH.md) → *Known risks*.
+- **Stub `journey-solution-option` with a canned solution set** so a future `@regression`
+  lane can drive *past* the button and assert on rendered results — still with no live
+  backend. (Today the submit tests only intercept the request to read its payload.)
+- **Re-capture on drift**: the `live-chromium` project is what flags a changed payload
+  shape; the fixtures in `src/support/mocks/` are then re-captured from a fresh live run.
 
 ## 5. More quality signals
 

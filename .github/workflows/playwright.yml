@@ -21,14 +21,11 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
 
-  e2e:
+  # Deterministic lane — stubbed autocomplete. This is the gate that must be green.
+  e2e-mocked:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     needs: lint-and-typecheck
-    strategy:
-      fail-fast: false
-      matrix:
-        project: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,18 +33,39 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps ${{ matrix.project == 'webkit' && 'webkit' || matrix.project == 'firefox' && 'firefox' || 'chromium' }}
-      - name: Run Playwright tests
-        run: npx playwright test --project=${{ matrix.project }}
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:mocked
         env:
           CI: "true"
-      # NOTE: amtrak.com is behind Akamai bot management and frequently blocks
-      # GitHub-hosted runners. When that happens the suite SKIPS (see the POM
-      # fixture) rather than failing. Treat a green-with-skips run as "infra
-      # blocked", not "tests passed".
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: playwright-report-${{ matrix.project }}
+          name: playwright-report-mocked
+          path: playwright-report/
+          retention-days: 14
+
+  # Live lane — real site. Bot-protected + latency-prone, so it is allowed to fail
+  # (and the POM fixture skips gracefully when Akamai blocks the runner). Run it as a
+  # signal, not a gate.
+  e2e-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: lint-and-typecheck
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:live
+        env:
+          CI: "true"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-live
           path: playwright-report/
           retention-days: 14

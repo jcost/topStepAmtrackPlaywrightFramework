@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+import type { WorkerOptions } from './src/fixtures/pom.fixtures';
+
 /**
  * Playwright configuration for the Amtrak "Find trains" suite.
  *
@@ -11,7 +13,7 @@ import { defineConfig, devices } from '@playwright/test';
  *                                      per-test readiness check in the POM fixture will
  *                                      `test.skip()` gracefully if Akamai blocks the widget.
  */
-export default defineConfig({
+export default defineConfig<WorkerOptions>({
   testDir: './tests',
   outputDir: './test-results',
 
@@ -20,9 +22,11 @@ export default defineConfig({
 
   fullyParallel: true,
   workers: process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : 4,
-  // One local retry absorbs the occasional slow autocomplete response from the live
-  // (bot-protected) Amtrak site; CI gets two. See docs/APPROACH.md ➜ "Known risks".
-  retries: process.env.CI ? 2 : 1,
+  // `mocked*` projects stub the live autocomplete, so the only variance left is the
+  // widget's own client-side processing on the heaviest fills — one retry covers it.
+  // `live-chromium` hits the real bot-protected site and gets two. See
+  // docs/APPROACH.md ➜ "Known risks".
+  retries: 1,
 
   timeout: 90_000,
   expect: { timeout: 15_000 },
@@ -47,26 +51,35 @@ export default defineConfig({
   },
 
   projects: [
+    // ---- Deterministic lane: stubbed autocomplete, no retries. This is the lane that
+    //      must be green. It still drives the real Angular widget end to end — only the
+    //      station-lookup network response is canned. ----
     {
-      name: 'chromium',
+      name: 'mocked-chromium',
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1440, height: 900 },
-        // Reduce the most obvious automation signal without spoofing the UA string.
         launchOptions: { args: ['--disable-blink-features=AutomationControlled'] },
+        mockAmtrakApi: true,
       },
     },
     {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'], viewport: { width: 1440, height: 900 } },
+      // Bonus lane — the Pixel 7 viewport is more interaction-fragile than desktop.
+      name: 'mocked-mobile',
+      use: { ...devices['Pixel 7'], mockAmtrakApi: true },
     },
+
+    // ---- Live lane: real site, real autocomplete. Catches API-shape drift the mocks
+    //      can't. Bot-protected + latency-prone, so it gets retries and is allowed to
+    //      skip (see the `test.skip` in pom.fixtures.ts). ----
     {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'], viewport: { width: 1440, height: 900 } },
-    },
-    {
-      name: 'mobile-chrome',
-      use: { ...devices['Pixel 7'] },
+      name: 'live-chromium',
+      retries: 2,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 900 },
+        launchOptions: { args: ['--disable-blink-features=AutomationControlled'] },
+      },
     },
   ],
 });

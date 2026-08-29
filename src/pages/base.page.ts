@@ -15,9 +15,6 @@ export abstract class BasePage {
   protected navigate = async (path: string): Promise<Response | null> =>
     this.page.goto(path, { waitUntil: 'domcontentloaded' });
 
-  /** Current URL — handy for tests that assert on navigation without touching `page`. */
-  url = (): string => this.page.url();
-
   /**
    * Belt-and-braces OneTrust dismissal. The primary defence is cookie pre-seeding
    * (see src/support/consent.ts); this handles the case where the banner still renders.

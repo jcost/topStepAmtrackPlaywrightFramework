@@ -1,12 +1,12 @@
-import { test, expect } from '../../src/fixtures/pom.fixtures';
-import { STATIONS } from '../../src/data/test-data';
+import { test, expect } from '../../../src/fixtures/pom.fixtures';
+import { DEPART_LEAD_DAYS, STATIONS, addDays } from '../../../src/data/test-data';
 
 /**
- * Edge cases — autocomplete behaviour, passenger stepper, and coupon input.
- * All within the assignment scope (form + inputs, up to the submit click).
+ * From / To station inputs: the autocomplete, the swap control, and the
+ * same-origin-and-destination rule. All non-mutating UI interaction — `@smoke`.
  */
-test.describe('Find trains form — edge cases', () => {
-  test('station autocomplete suggests matching stations as you type', { tag: '@edge' }, async ({
+test.describe('Find trains form — station selection', () => {
+  test('[smoke] autocomplete lists matching stations while the user types', { tag: '@smoke' }, async ({
     homePage,
   }) => {
     await homePage.findTrainsForm.searchStations('from', STATIONS.newYork.query);
@@ -15,7 +15,7 @@ test.describe('Find trains form — edge cases', () => {
     await expect(homePage.findTrainsForm.realStationSuggestions().first()).toContainText(/new york/i);
   });
 
-  test('station autocomplete returns no real stations for gibberish input', { tag: '@edge' }, async ({
+  test('[smoke] autocomplete lists no station for an unrecognized query', { tag: '@smoke' }, async ({
     homePage,
   }) => {
     await homePage.findTrainsForm.searchStations('from', 'qxzptlk');
@@ -23,16 +23,29 @@ test.describe('Find trains form — edge cases', () => {
     await expect(homePage.findTrainsForm.realStationSuggestions()).toHaveCount(0);
   });
 
-  test('passenger stepper increases the traveler count', { tag: '@edge' }, async ({ homePage }) => {
-    await homePage.findTrainsForm.travelerButton().click();
-    await homePage.findTrainsForm.addPassengerButton('adults').click();
+  test('[smoke] the swap control exchanges the From and To stations', { tag: '@smoke' }, async ({ homePage }) => {
+    await homePage.findTrainsForm.selectStation('from', STATIONS.newYork.query);
+    await homePage.findTrainsForm.selectStation('to', STATIONS.washington.query);
 
-    await expect(homePage.findTrainsForm.travelerButton()).toContainText('2');
+    // Both fields must be committed to their station codes before the swap reads them —
+    // on the slower engines the swap can otherwise fire against an uncommitted field
+    // and move an empty value across.
+    await expect(homePage.findTrainsForm.fromStationInput()).toHaveValue(STATIONS.newYork.code);
+    await expect(homePage.findTrainsForm.toStationInput()).toHaveValue(STATIONS.washington.code);
+
+    await homePage.findTrainsForm.swapStationsButton().click();
+
+    await expect(homePage.findTrainsForm.fromStationInput()).toHaveValue(STATIONS.washington.code);
+    await expect(homePage.findTrainsForm.toStationInput()).toHaveValue(STATIONS.newYork.code);
   });
 
-  test('coupon field accepts and retains an entered code', { tag: '@edge' }, async ({ homePage }) => {
-    await homePage.findTrainsForm.applyCoupon('V595');
+  test('[smoke] the same station in From and To leaves Find trains disabled', { tag: '@smoke' }, async ({
+    homePage,
+  }) => {
+    await homePage.findTrainsForm.selectStation('from', STATIONS.newYork.query);
+    await homePage.findTrainsForm.selectStation('to', STATIONS.newYork.query);
+    await homePage.findTrainsForm.selectDepartureDate(addDays(new Date(), DEPART_LEAD_DAYS));
 
-    await expect(homePage.findTrainsForm.couponInput()).toHaveValue('V595');
+    await expect(homePage.findTrainsForm.findTrainsButton()).toHaveAttribute('aria-disabled', 'true');
   });
 });

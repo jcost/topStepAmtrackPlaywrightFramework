@@ -10,3 +10,8 @@ playwright/.cache/
 .env.local
 .idea/
 .vscode/
+
+# MCP server config + scratch output — local dev tooling for authoring tests, not part of the framework
+.mcp.json
+.claude/
+.playwright-mcp/

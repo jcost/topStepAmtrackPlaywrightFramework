@@ -2,6 +2,7 @@ import { test as base, expect } from '@playwright/test';
 
 import { HomePage } from '../pages/home.page';
 import { seedAmtrakConsent } from '../support/consent';
+import { mockAmtrakStationAutocomplete } from '../support/mocks/amtrak-routes';
 
 /**
  * Fixture-based Page Object injection.
@@ -20,8 +21,19 @@ export interface PageObjects {
   homePage: HomePage;
 }
 
-export const test = base.extend<PageObjects>({
-  homePage: async ({ page }, use) => {
+export interface WorkerOptions {
+  /** Project option — when true, the live station autocomplete is stubbed (mock lane). */
+  mockAmtrakApi: boolean;
+}
+
+export const test = base.extend<PageObjects & WorkerOptions>({
+  mockAmtrakApi: [false, { option: true }],
+
+  homePage: async ({ page, mockAmtrakApi }, use) => {
+    // Routes must be registered before the page navigates.
+    if (mockAmtrakApi) {
+      await mockAmtrakStationAutocomplete(page);
+    }
     await seedAmtrakConsent(page.context());
     const homePage = new HomePage(page);
     await homePage.open();
