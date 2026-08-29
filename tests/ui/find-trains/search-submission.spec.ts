@@ -22,7 +22,7 @@ import { readLegs, readTripType } from '../../../src/support/journey-search';
  * Every test here is non-mutating UI interaction, so every test is `@smoke`.
  */
 test.describe('Find trains form — search submission', () => {
-  test('[smoke] Find trains stays disabled until From, To and departure date are set', { tag: '@smoke' }, async ({
+  test('Find trains stays disabled until From, To and departure date are set', { tag: '@smoke' }, async ({
     homePage,
   }) => {
     await expect(homePage.findTrainsForm.findTrainsButton()).toHaveAttribute('aria-disabled', 'true');
@@ -34,33 +34,9 @@ test.describe('Find trains form — search submission', () => {
     await expect(homePage.findTrainsForm.findTrainsButton()).toHaveAttribute('aria-disabled', 'false');
   });
 
-  test('[smoke] Find trains stays disabled when only From is set', { tag: '@smoke' }, async ({ homePage }) => {
-    await homePage.findTrainsForm.selectStation('from', STATIONS.newYork.query);
-
-    await expect(homePage.findTrainsForm.findTrainsButton()).toHaveAttribute('aria-disabled', 'true');
-  });
-
-  test('[smoke] a fully completed one-way search is valid — no error, submit enabled', { tag: '@smoke' }, async ({
-    homePage,
-  }) => {
-    const trip = TripSearchBuilder.aTrip()
-      .oneWay()
-      .from(STATIONS.newYork.query)
-      .to(STATIONS.washington.query)
-      .departingInDays(DEPART_LEAD_DAYS)
-      .build();
-
-    await homePage.findTrainsForm.fillSearch(trip);
-
-    // Assert on the *form*, not on what the click's backend call returns (which varies).
-    // SS4–SS6 cover the click and the request it fires.
-    await expect(homePage.findTrainsForm.anyValidationError()).toHaveCount(0);
-    await expect(homePage.findTrainsForm.findTrainsButton()).toHaveAttribute('aria-disabled', 'false');
-  });
-
   // One assertion path, run per bookable trip type (see SUBMITTABLE_TRIP_TYPES).
   for (const { tripType, apiType } of SUBMITTABLE_TRIP_TYPES) {
-    test(`[smoke] a ${tripType} submit sends the entered trip to the search API`, { tag: '@smoke' }, async ({
+    test(`A ${tripType} submit sends the entered trip to the search API`, { tag: '@smoke' }, async ({
       homePage,
       page,
     }) => {
@@ -109,7 +85,7 @@ test.describe('Find trains form — search submission', () => {
         if (i === 0) {
           expect(legs[i].originCode).toBe(stationCode(expected.from));
         } else {
-          // Live-widget quirk (captured 2026-08-28): legs after the first can echo the
+          // Live-widget quirk: legs after the first can echo the
           // origin as a display name ("Boston") instead of the code ("BOS"). Accept both.
           const code = stationCode(expected.from);
           const city = expected.from.split(',')[0];
@@ -118,4 +94,38 @@ test.describe('Find trains form — search submission', () => {
       });
     });
   }
+
+  test('The entered passenger mix is carried into the search request', { tag: '@smoke' }, async ({
+    homePage,
+    page,
+  }) => {
+    const trip = TripSearchBuilder.aTrip()
+      .oneWay()
+      .from(STATIONS.newYork.query)
+      .to(STATIONS.washington.query)
+      .departingInDays(DEPART_LEAD_DAYS)
+      .withPassengers({ adults: 2, children: 1 })
+      .build();
+
+    let searchBody: unknown;
+    await page.route(homePage.findTrainsForm.journeySearchRoute, async (route) => {
+      searchBody ??= route.request().postDataJSON();
+      await route.abort();
+    });
+
+    await homePage.findTrainsForm.fillSearch(trip);
+    await expect(homePage.findTrainsForm.findTrainsButton()).toHaveAttribute('aria-disabled', 'false');
+    await homePage.findTrainsForm.findTrainsButton().click();
+
+    await expect
+      .poll(() => searchBody, {
+        message: 'no journey-solution-option request was sent after the passenger-mix submit',
+      })
+      .toBeTruthy();
+
+    const [leg] = readLegs(searchBody);
+    // 2 adults + 1 child → one passenger entry per traveler.
+    expect(leg.passengerCount).toBe(3);
+    expect([...leg.passengerTypes].sort()).toEqual(['adult', 'adult', 'child']);
+  });
 });

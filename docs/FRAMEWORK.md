@@ -26,19 +26,18 @@ button.
 ```
 tests/
 ├── ui/find-trains/                  # browser-driven, uses Page Objects (src/pages/)
-│   ├── station-selection.spec.ts    # From/To autocomplete, swap, same-station rule
-│   ├── trip-type.spec.ts            # One-Way / Round-Trip toggle
+│   ├── station-selection.spec.ts    # From/To autocomplete, same-station rule
+│   ├── trip-type.spec.ts            # Multi-City reshaping (RT reshaping covered by the RT submit)
 │   ├── departure-date.spec.ts       # depart calendar constraints
 │   ├── passenger-selection.spec.ts  # traveler popover + steppers
-│   ├── promo-code.spec.ts           # coupon field
 │   └── search-submission.spec.ts    # Find trains button gating + firing the request
 └── api/find-trains/                 # request-context driven, uses API clients (src/clients/) — scaffold
     └── README.md
 ```
 
 One spec file per **feature of the form**, named for what it covers. Test titles say what
-happens on the app (`[smoke] the swap control exchanges the From and To stations`), so the
-reporter output reads as a description of behaviour.
+happens on the app (`[smoke] the same station in From and To leaves Find trains disabled`),
+so the reporter output reads as a description of behaviour.
 
 - **Directories never change** as test types are added — you never move a file to
   "promote" it from smoke to regression, you retag it.
@@ -93,9 +92,17 @@ Specs reach it as `homePage.findTrainsForm.fromStationInput()`. When the homepag
 ### Locators are arrow-function properties
 
 ```ts
-fromStationInput = (): Locator => this.page.locator('input#am-form-field-control-0');
+// the <station-search> wrapper carries the test-id; the <input> lives inside it
+private stationField = (field: 'from' | 'to', index = 0): Locator =>
+  this.page
+    .locator(`[amt-auto-test-id="fare-finder-${field}-station-field-page"]`)
+    .filter({ visible: true })
+    .nth(index);
+fromStationInput = (): Locator => this.stationField('from').locator('input');
 addPassengerButton = (type: PassengerType): Locator =>
-  this.page.getByRole('button', { name: `+ Add ${SINGULAR[type]}`, exact: true });
+  this.page
+    .locator(`[amt-auto-test-id="traveler-component-${TRAVELER_KEY[type]}-incr-button"]`)
+    .filter({ visible: true });
 ```
 
 Parameterised where it helps (`calendarDay(date)`, `legFromInput(index)`). They return a
@@ -103,30 +110,75 @@ Parameterised where it helps (`calendarDay(date)`, `legFromInput(index)`). They 
 
 ### Locator priority
 
-`getByRole` → `getByLabel` → `.locator(css)` → raw css. In practice, because the widget
-is a dense Angular app with duplicated mobile/desktop nodes and repeated accessible
-names, the most *stable* hook is often Amtrak's own `amt-auto-test-id` attribute, so the
-real order applied is:
+The goal is the **most stable, least-changing hook for that specific field**. Order,
+most-stable first:
 
-1. `getByRole` / `getByLabel` when the role + accessible name are unambiguous
-   (`FIND TRAINS` button, `Next month`, calendar `gridcell` by date label);
-2. `[amt-auto-test-id="…"]` where Amtrak provides one (trip-type button, coupon toggle,
-   traveler button, fare-finder container);
-3. `#am-form-field-control-N` / css for the few controls with neither — each tagged
-   `// VERIFY:` with a note on why.
+1. **`[amt-auto-test-id="…"]`** — an attribute Amtrak added *for* test automation. When
+   one exists (and isn't duplicated/mislabeled) it is the single stablest hook, because
+   its whole reason to exist is being targeted by tests. Used for: fare-finder container,
+   FIND TRAINS button, trip-type trigger, `multi-city-add-trip` / `multi-city-remove-trip`,
+   both station fields (`fare-finder-{from,to}-station-field-page` on the `<station-search>`
+   wrapper — `.locator('input')` / `.getByRole('option')` reach the input and its own
+   autocomplete list inside it), each depart-date input (`fare-finder-depart-date-oneway`),
+   the traveler button, the steppers (`traveler-component-<key>-incr/dcr-button`),
+   `traveler-clear` (Reset) and `traveler-component-discount-done-button` (Done).
+2. **`getByRole`** (role + accessible name) — `Next month` / `Previous month`, calendar
+   `gridcell` by date label, the trip-type menu items (the buttons that *do* carry a
+   test-id have no accessible name — a `data-julie` side channel), the autocomplete
+   `option`s and `listbox` (scoped inside the field container, above).
+3. **`getByLabel`**.
+4. **A unique, stable `id`** — none needed any more; the station inputs moved to their
+   wrapper's test-id (tier 1).
+5. **css** — `aria-labelledby` for the two date fields (`ff-depart-ow-label` /
+   `ff-rt-depart-label` / `ff-rt-return-label`: the depart/return test-ids are on four
+   inputs and one is mislabeled, so the per-field label id is the stablest hook);
+   `.calendar-modal, .am-datepicker` for the ng-bootstrap calendar container (third-party,
+   no Amtrak test-ids).
 
-`Locator.or(...)` and `.filter({ visible: true })` are used to make a single accessor
-tolerate small DOM changes and the mobile/desktop duplication.
+Tier-5 accessors are tagged `// VERIFY:` with the reason. No `.or(...)` fallback chains —
+if a test-automation id is ever removed, the locator should break loudly there (a clear
+one-line fix) rather than silently drop to a fragile text match.
+
+`.filter({ visible: true })` is used to pick the *rendered* one of a set of duplicated
+nodes — Amtrak ships the widget twice (desktop + mobile), and Multi-City renders one
+station field / date input per leg plus a hidden leftover One-Way/Round-Trip copy. It is
+also why the station accessors filter the **container**, not the `<input>`: once a station
+is committed the widget collapses its input to a code chip (`input:visible` would match
+nothing) while the `<station-search>` stays visible.
+
+`.first()` is kept **only** where a locator still resolves to more than one element after
+that (checked against the live DOM 2026-08-29): `findTrainsButton` /
+`addTripButton` / `removeTripButton` (test-id ×2 + a re-render fade window), `calendar`
+(the union matches the outer wrapper and inner picker, both visible), and
+`passengerRequirementError` (the message is printed on two nodes). Elsewhere it was
+dropped so strict mode surfaces a future regression instead of a `.first()` hiding it.
+
+### Typing into the autocomplete
+
+`selectStationInto` sets the search text with **`fill`** for all but the last character
+and types only the last one for real (`typeStation`). `fill` is atomic — a single `input`
+event, which is all Amtrak's autocomplete needs — so nothing can leak into a
+previously-committed field when focus shifts mid-interaction (the `"NYPington"` bug).
+The single trailing keystroke fires the `keyup` the widget listens on. Options are then
+matched **by 3-letter code**, scoped to that field's own list, and the committed value is
+verified against the code (4 attempts, then a loud `throw`).
+
+**Not used: `data-julie`.** Amtrak's virtual-assistant hooks (`data-julie="fromfield_booking"`,
+`"roundtrip"`, …) look tempting but (a) `fromfield_booking` / `tofield_booking` /
+`departdisplay_booking_oneway` are reused for **every** Multi-City leg, so no more unique
+than `aria-label="From"`; (b) the `data-julie="oneway|roundtrip|multicity"` buttons carry
+no accessible name and sit by the submit button, not in the visible menu — a side channel,
+not what a user clicks.
 
 ### Actions vs. methods
 
 | Belongs in the **spec** | Belongs in the **Page Object** |
 | --- | --- |
 | A single `click()` / `fill()` / `check()` | A multi-field journey — the "login-style" flow |
-| The "Find trains" button click | `fillSearch(trip)` — trip type + stations + dates (+ multi-city legs) |
-| `swapStationsButton().click()` | `selectStation(field, query)` — focus, type, wait for the listbox, pick the matching option, verify it committed (with retry) |
-| Opening the traveler popover | `selectDepartureDate(date)` — open calendar, walk to the month, click the day, confirm it closed |
-| `adjustPassenger('adults', 1)` | `fillLegs(legs)` — add rows, then fill each leg's From / To / Depart |
+| The "Find trains" button click | `fillSearch(trip)` — trip type + stations + dates + party mix (+ multi-city legs) |
+| `findTrainsButton().click()` | `selectStation(field, query)` — focus, type, wait for the listbox, pick by station code, verify it committed (with retry) |
+| `adjustPassenger('adults', 1)` | `selectDepartureDate(date)` — open calendar, walk to the month, click the day, confirm it closed |
+| `resetTravelersButton().click()` | `fillLegs(legs)` — add rows, then fill each leg's From / To / Depart |
 
 `fillSearch` deliberately **stops before** pressing "Find trains" — that click stays in
 the spec, next to the assertion about what it produced.
@@ -142,16 +194,19 @@ The spec does the `expect(...)`. Enforced by lint (below).
 
 ```ts
 const trip = TripSearchBuilder.aTrip()
-  .roundTrip(RETURN_LEAD_DAYS)
-  .from(STATIONS.boston.query)
-  .to(STATIONS.philadelphia.query)
+  .oneWay()
+  .from(STATIONS.newYork.query)
+  .to(STATIONS.washington.query)
   .departingInDays(DEPART_LEAD_DAYS)
+  .withPassengers({ adults: 2, children: 1 })
   .build();
 ```
 
-Defaults live in one place; specs state only what's salient to them. `standardTripFor(tripType)`
-returns the canonical trip for each of the three bookable types, which is what the submit
-spec loops over.
+Defaults live in one place; specs state only what's salient to them. Methods:
+`.oneWay()` / `.roundTrip(days)` / `.multiCity(legs)`, `.from()` / `.to()`,
+`.departingInDays()`, `.withPassengers()`, `.build()`. `standardTripFor(tripType)` wraps
+the builder to return the canonical trip per bookable type, which the parameterized submit
+test loops over; the passenger-mix test above builds its trip inline.
 
 ## The guard rails (enforced by `npm run lint`)
 
@@ -203,7 +258,7 @@ Guard 1 makes any shortcut around this fail CI.
 | --- | --- | --- |
 | `fullyParallel` + `workers` | `true`, `4` | 4 parallel workers by default (`PW_WORKERS` overrides). |
 | `projects` | `mocked-chromium`, `mocked-mobile`, `live-chromium` | See "The two lanes" below. |
-| `retries` | `1` (mocked), `2` (`live-chromium`) | The mock lane's only variance is the widget's own processing on the heaviest fills; the live lane also fights bot-protection + network latency. |
+| `retries` | `2` all projects | Single-leg tests never use it; it exists for the multi-city submit (mocked) and bot-protection/latency (live). |
 | `trace` / `screenshot` / `video` | on failure / first retry | Debuggable failures, cheap green runs. |
 | `globalSetup` | reachability probe | Non-fatal; logs whether Amtrak answered so a wall of skips is easy to explain. |
 | `reporter` | `list` + `html` + `junit` | Console feedback, rich local report, CI-parseable XML. |
@@ -213,7 +268,7 @@ Guard 1 makes any shortcut around this fail CI.
 
 | Project | `mockAmtrakApi` | What it proves | Gate? |
 | --- | --- | --- | --- |
-| `mocked-chromium` | `true` | The full Angular widget — typing, option rendering, value commit, `aria-disabled` validation gating, trip-type/calendar/traveler/coupon behaviour, and the `journey-solution-option` **request payload** — all against a **stubbed** `getResponseList` so the flaky geocoder latency is out of the picture. | **Yes** — must be green. |
+| `mocked-chromium` | `true` | The full Angular widget — typing, option rendering, value commit, `aria-disabled` validation gating, trip-type/calendar/traveler behaviour, and the `journey-solution-option` **request payload** — all against a **stubbed** `getResponseList` so the flaky geocoder latency is out of the picture. | **Yes** — must be green. |
 | `mocked-mobile` | `true` | Same, on the Pixel 7 viewport. | Bonus. |
 | `live-chromium` | `false` | The real site still serves a widget we can drive, and the real autocomplete payload still has the shape the mocks assume. Catches API drift the mocks can't. | No — allowed to flake / skip. |
 

@@ -9,7 +9,7 @@ async function globalSetup(): Promise<void> {
   const target = `${process.env.BASE_URL ?? 'https://www.amtrak.com'}/home`;
   try {
     const context = await request.newContext();
-    const response = await context.get(target, { timeout: 20_000 });
+    const response = await context.get(target, { timeout: 30_000 });
     const status = response.status();
     console.log(`[global-setup] GET ${target} -> ${status}`);
     if (status >= 400) {

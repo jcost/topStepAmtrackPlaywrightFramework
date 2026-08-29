@@ -1,5 +1,4 @@
 import type { Page } from '@playwright/test';
-
 import { LOCATION_RESULT, STATION_CATALOG } from './station-catalog';
 
 /**
@@ -29,9 +28,10 @@ export const mockAmtrakStationAutocomplete = async (page: Page): Promise<void> =
     const term = (new URL(route.request().url()).searchParams.get('searchTerm') ?? '').trim();
     const stations = term ? stationMatches(term) : [];
 
-    const autoCompleteList = stations.length
-      ? [...stations, LOCATION_RESULT(`${term}, USA`)]
-      : [LOCATION_RESULT(`${term || 'search'}, NY`), LOCATION_RESULT(`${term || 'search'} County`)];
+    // Match the live service: a recognised term returns its station(s) plus a trailing
+    // free-text "Locations" row; an unrecognised term returns an empty list (the widget
+    // then shows nothing — it does *not* fall back to popular stations).
+    const autoCompleteList = stations.length ? [...stations, LOCATION_RESULT(`${term}, USA`)] : [];
 
     await route.fulfill({
       contentType: 'application/json',

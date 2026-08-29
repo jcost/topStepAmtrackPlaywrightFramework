@@ -98,11 +98,10 @@ npm run check               # lint + typecheck
 ├── tests/
 │   ├── _support/global-setup.ts               # one reachability probe (non-fatal)
 │   ├── ui/find-trains/                        # browser-driven specs, one file per form feature
-│   │   ├── station-selection.spec.ts         # From/To autocomplete, swap, same-station rule
-│   │   ├── trip-type.spec.ts                 # One-Way / Round-Trip toggle
+│   │   ├── station-selection.spec.ts         # From/To autocomplete, same-station rule
+│   │   ├── trip-type.spec.ts                 # Multi-City reshaping
 │   │   ├── departure-date.spec.ts            # depart calendar constraints
 │   │   ├── passenger-selection.spec.ts       # traveler popover + steppers
-│   │   ├── promo-code.spec.ts                # coupon field
 │   │   └── search-submission.spec.ts         # Find trains button gating + firing the request
 │   └── api/find-trains/
 │       └── README.md                         # scaffold — see file for what lands here
@@ -142,6 +141,6 @@ the HTML report as an artifact.
 | Symptom | Cause & fix |
 | --- | --- |
 | Every test **skips** with "widget did not load" | amtrak.com is behind Akamai bot management and blocked this run (common from datacenter/CI IPs). Re-run, or run locally. The suite skips instead of failing red — this is by design. |
-| A test is **flaky** in `mocked-chromium` | The stub removes network latency, so this should be rare — `retries: 1` covers the widget's own processing on the heaviest fills (multi-city). A genuinely stuck fill throws "Could not commit station …". If it's frequent, re-capture the mock fixtures (`src/support/mocks/`) against the live payload. Flakes in `live-chromium` are expected and non-blocking. See [docs/APPROACH.md](docs/APPROACH.md) → *Known risks*. |
+| A test is **flaky** in `mocked-chromium` | The stub removes network latency, so this should be rare — the `retries: 2` budget covers the multi-city submit, the one fill heavy enough to still race the widget. A genuinely stuck fill throws "Could not commit station …". If it's frequent, re-capture the mock fixtures (`src/support/mocks/`) against the live payload. Flakes in `live-chromium` are expected and non-blocking. See [docs/APPROACH.md](docs/APPROACH.md) → *Known risks*. |
 | Selectors suddenly break | Amtrak reworked the widget. Re-inspect with `npm run codegen` and update the `VERIFY:`-tagged locators in [`find-trains-form.component.ts`](src/pages/components/find-trains-form.component.ts). |
 | OneTrust cookie banner blocks clicks | Handled by [`src/support/consent.ts`](src/support/consent.ts) (cookie pre-seed) + a fallback click in `BasePage`. If Amtrak changes the CMP, update those. |

@@ -1,7 +1,7 @@
 /**
  * Test data + a small Builder for describing a "Find trains" search.
  *
- * The PDF explicitly calls out the Builder pattern; `TripSearchBuilder` keeps specs
+ * `TripSearchBuilder` keeps specs
  * readable ("a one-way trip from New York to Washington leaving in 14 days") and gives
  * us one place to evolve defaults as the form changes.
  */
@@ -112,6 +112,12 @@ export class TripSearchBuilder {
 
   departingInDays = (days: number): TripSearchBuilder => {
     this.trip.departDate = addDays(new Date(), days);
+    return this;
+  };
+
+  /** Override the party mix, e.g. `.withPassengers({ adults: 2, children: 1 })`. */
+  withPassengers = (counts: Partial<PassengerCounts>): TripSearchBuilder => {
+    this.trip.passengers = { ...this.trip.passengers, ...counts };
     return this;
   };
 

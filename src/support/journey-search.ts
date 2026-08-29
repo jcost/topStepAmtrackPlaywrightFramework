@@ -34,6 +34,8 @@ export interface Leg {
   /** e.g. "2026-09-11T00:00:00" */
   departDateTime?: string;
   passengerCount: number;
+  /** One entry per traveler, e.g. `["adult", "adult", "child"]`. */
+  passengerTypes: string[];
 }
 
 /** `journeyRequest.type` — "OW" | "RT" | "MC". Pure. */
@@ -48,5 +50,6 @@ export const readLegs = (body: unknown): Leg[] => {
     destinationCode: leg?.destination?.code,
     departDateTime: leg?.origin?.schedule?.departureDateTime,
     passengerCount: leg?.passengers?.length ?? 0,
+    passengerTypes: (leg?.passengers ?? []).map((p) => p?.initialType ?? '').filter(Boolean),
   }));
 };

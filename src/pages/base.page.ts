@@ -22,12 +22,12 @@ export abstract class BasePage {
   dismissConsentBanners = async (): Promise<void> => {
     const acceptAll = this.page.locator('#onetrust-accept-btn-handler');
     if (await acceptAll.isVisible().catch(() => false)) {
-      await acceptAll.click({ timeout: 3_000 }).catch(() => undefined);
+      await acceptAll.click({ timeout: 5_000 }).catch(() => undefined);
     }
 
     const confirmChoices = this.page.locator('.onetrust-close-btn-handler, .save-preference-btn-handler');
     if (await confirmChoices.first().isVisible().catch(() => false)) {
-      await confirmChoices.first().click({ timeout: 3_000 }).catch(() => undefined);
+      await confirmChoices.first().click({ timeout: 5_000 }).catch(() => undefined);
     }
   };
 }

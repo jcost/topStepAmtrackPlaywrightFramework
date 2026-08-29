@@ -1,7 +1,9 @@
 import type { Locator, Page } from '@playwright/test';
 
 import {
+  DEFAULT_PASSENGERS,
   stationCode,
+  type PassengerCounts,
   type PassengerType,
   type TripLeg,
   type TripSearch,
@@ -14,13 +16,31 @@ import { BaseComponent } from './base.component';
  * Component object for the homepage **"Find trains"** search widget
  * (Amtrak's Angular "fare finder").
  *
- * Locator strategy (project standard): `getByRole` -> `getByLabel` -> `.locator` -> css.
- * Where Amtrak ships purpose-built `amt-auto-test-id` attributes we prefer those over a
- * brittle css path — they are the most stable hook the app exposes for automation.
+ * Locator strategy (project standard, most-stable first):
+ *   1. `[amt-auto-test-id="…"]`  — an attribute Amtrak added *for* test automation; when
+ *      one exists for the control it is the single most stable hook.
+ *   2. `getByRole` (role + accessible name)
+ *   3. `getByLabel`
+ *   4. a unique, stable `id`  (not needed after the 2026-08-29 refactor)
+ *   5. css  (`aria-labelledby` on the date inputs; class union on the calendar)
+ * No `.or(...)` fallback chains — a removed test-id should break the locator loudly here,
+ * not fall through to a fragile text match. `.filter({ visible: true })` picks the
+ * rendered one of a duplicated set: Amtrak ships the widget twice (desktop + mobile), and
+ * Multi-City renders one station field / date input per leg plus a hidden leftover
+ * One-Way/Round-Trip copy. The station accessors filter the **container**, not the
+ * `<input>` — a committed field collapses its input to a code chip (so `input:visible`
+ * matches nothing) while the `<station-search>` stays visible; the field's own
+ * autocomplete `listbox` is nested inside that container, so options are scoped there too.
+ * `.first()` is used **only** where a locator still resolves to >1 element after that
+ * (verified against the live DOM 2026-08-29): `findTrainsButton` / `addTripButton` /
+ * `removeTripButton` (re-render fade window), `calendar` (union matches wrapper + inner),
+ * `passengerRequirementError` (message printed on two nodes).
  *
- * Selectors here were derived by inspecting https://www.amtrak.com/home with Playwright
- * on 2026-08-27. Lines that depend on incidental DOM detail are marked `VERIFY:` — re-run
- * `npm run codegen` if Amtrak reworks the widget. See docs/FRAMEWORK.md ➜ "Locator strategy".
+ * The accessors that fall back past the test-id tier (`departDateInput`, `returnDateInput`
+ * on `aria-labelledby`; the calendar container + controls; `tripTypeOption`) each carry a
+ * comment saying which test-id exists and why it is unusable (duplicated, mislabeled, or
+ * third-party). Derived from live inspection (2026-08-27, test-id audit + refactor
+ * 2026-08-29). See docs/FRAMEWORK.md ➜ "Locator priority".
  *
  * Contract: arrow-function locators, multi-step "journey" methods allowed, **no assertions**.
  */
@@ -43,12 +63,11 @@ export class FindTrainsForm extends BaseComponent {
 
   root = (): Locator => this.page.locator('[amt-auto-test-id="fare-finder-cmp"]');
 
+  // Two nodes carry this test-id (desktop + mobile copy of the widget); `.filter(visible)`
+  // leaves the active one. `.first()` covers the brief window during the trip-type
+  // re-render where the outgoing copy is still visible while the new one mounts.
   findTrainsButton = (): Locator =>
-    this.page
-      .getByRole('button', { name: 'FIND TRAINS', exact: true })
-      .or(this.page.locator('[amt-auto-test-id="fare-finder-findtrains-button"]'))
-      .filter({ visible: true })
-      .first();
+    this.page.locator('[amt-auto-test-id="fare-finder-findtrains-button"]').filter({ visible: true }).first();
 
   /** Wait (not assert) for the widget's core controls to be interactive; swallows
    *  timeouts so the POM fixture can `test.skip()` gracefully when the page is blocked.
@@ -73,138 +92,121 @@ export class FindTrainsForm extends BaseComponent {
   // Trip type
   // ---------------------------------------------------------------------------
 
+  // Single node in the DOM — `.filter(visible)` is enough, no `.first()` needed.
   tripTypeButton = (): Locator =>
-    this.page
-      .locator('[amt-auto-test-id="fare-finder-travel-selection"]')
-      .filter({ visible: true })
-      .first();
+    this.page.locator('[amt-auto-test-id="fare-finder-travel-selection"]').filter({ visible: true });
 
+  // The dropdown menu items have no test-id (the `data-julie` buttons that do are a
+  // no-accessible-name side channel). One menu item per label — `.filter(visible)` → one.
   tripTypeOption = (label: string): Locator =>
-    this.page.getByRole('button', { name: label, exact: true }).filter({ visible: true }).first();
+    this.page.getByRole('button', { name: label, exact: true }).filter({ visible: true });
 
-  /** Multi-City only: the controls that add / drop a trip leg. */
+  /** Multi-City only: the controls that add / drop a trip leg. Amtrak's purpose-built
+   *  `amt-auto-test-id`. `.first()` covers the trip-type re-render
+   *  window when these mount, same as `findTrainsButton`. */
   addTripButton = (): Locator =>
-    this.page.getByRole('button', { name: 'Add Trip', exact: true }).filter({ visible: true }).first();
+    this.page.locator('[amt-auto-test-id="multi-city-add-trip"]').filter({ visible: true }).first();
 
   removeTripButton = (): Locator =>
-    this.page.getByRole('button', { name: 'Remove Trip', exact: true }).filter({ visible: true }).first();
+    this.page.locator('[amt-auto-test-id="multi-city-remove-trip"]').filter({ visible: true }).first();
 
   // ---------------------------------------------------------------------------
   // Stations (From / To) + autocomplete
   // ---------------------------------------------------------------------------
 
-  // VERIFY: `am-form-field-control-{n}` ids are assigned by Angular in render order.
-  // Stable for the current booking widget; fall back to codegen if they shift.
-  fromStationInput = (): Locator => this.page.locator('input#am-form-field-control-0');
-  toStationInput = (): Locator => this.page.locator('input#am-form-field-control-2');
+  // Each station field is a `<station-search amt-auto-test-id="fare-finder-{from,to}-station-field-page">`
+  // wrapping one `<input>` *and its own autocomplete `listbox`*. Everything about a field
+  // — the input, the suggestion list, its options — is scoped to this container so a
+  // Multi-City leg (or a just-committed neighbour) can't cross-talk. Filter the container
+  // by visibility, not the input: once a station is committed the widget collapses the
+  // `<input>` to a code chip (so `input:visible` matches nothing) while the container
+  // stays visible. One-Way / Round-Trip show one container of each; Multi-City shows one
+  // per leg plus a hidden leftover One-Way/Round-Trip container — hence `.nth(index)`.
+  private stationField = (field: 'from' | 'to', index = 0): Locator =>
+    this.page
+      .locator(`[amt-auto-test-id="fare-finder-${field}-station-field-page"]`)
+      .filter({ visible: true })
+      .nth(index);
 
-  // Multi-City renders one `.farefinder-base` row per leg, each with its own
-  // `.from-station` / `.to-station` inputs and a `.departed-picker` date field.
-  tripLegRows = (): Locator => this.root().locator('.farefinder-base');
-  legFromInput = (index: number): Locator =>
-    this.tripLegRows().nth(index).locator('.from-station input');
-  legToInput = (index: number): Locator => this.tripLegRows().nth(index).locator('.to-station input');
+  fromStationInput = (): Locator => this.stationField('from').locator('input');
+  toStationInput = (): Locator => this.stationField('to').locator('input');
+  legFromInput = (index: number): Locator => this.stationField('from', index).locator('input');
+  legToInput = (index: number): Locator => this.stationField('to', index).locator('input');
+
+  // `fare-finder-depart-date-oneway` is on the OW depart input *and* every Multi-City
+  // leg date — unique per leg once filtered to visible.
   legDepartDateInput = (index: number): Locator =>
-    this.tripLegRows().nth(index).locator('input.departed-picker').first();
+    this.page.locator('[amt-auto-test-id="fare-finder-depart-date-oneway"]').filter({ visible: true }).nth(index);
 
-  swapStationsButton = (): Locator =>
-    this.page.getByRole('button', { name: /switch departure and arrival stations/i }).first();
+  /** The open suggestion list for a station field. Every `<station-search>` has its own
+   *  `listbox`; `getByRole` inside the (visible) container ignores the others, which linger
+   *  in the DOM holding stale options after their field commits. */
+  stationSuggestionList = (field: 'from' | 'to' = 'from', index = 0): Locator =>
+    this.stationField(field, index).getByRole('listbox');
 
-  stationSuggestionList = (): Locator => this.page.getByRole('listbox').first();
-
-  /** Suggestions that look like a real station, i.e. carry a 3-letter code such as "(NYP)". */
-  realStationSuggestions = (): Locator =>
-    this.page.getByRole('option').filter({ hasText: /\([A-Z]{3}\)/ });
+  /** Suggestions in a field's open list that look like a real station, i.e. carry a
+   *  3-letter code such as "(NYP)" (not a "Locations" / bare city-name row). */
+  realStationSuggestions = (field: 'from' | 'to' = 'from', index = 0): Locator =>
+    this.stationSuggestionList(field, index).getByRole('option').filter({ hasText: /\([A-Z]{3}\)/ });
 
   // ---------------------------------------------------------------------------
   // Dates (ng-bootstrap datepicker)
   // ---------------------------------------------------------------------------
 
-  // The widget renders different depart inputs for one-way vs round-trip; both are
-  // addressed by their `aria-labelledby` (Amtrak's `amt-auto-test-id` is duplicated here).
+  // No usable test-id for the top-level date fields: `fare-finder-depart-date-oneway`
+  // covers the OW depart but NOT the RT depart, and `fare-finder-return-date-roundtrip`
+  // is on FOUR inputs (RT depart + RT return + two hidden). The per-field
+  // `aria-labelledby` label ids (`ff-depart-ow-label` / `ff-rt-depart-label` /
+  // `ff-rt-return-label`) are each unique, so they are the stablest hook. `VERIFY:`.
   departDateInput = (): Locator =>
     this.page
       .locator('input[aria-labelledby="ff-depart-ow-label"], input[aria-labelledby="ff-rt-depart-label"]')
-      .filter({ visible: true })
-      .first();
+      .filter({ visible: true });
 
-  // Only ever one return field in the DOM; no visibility filter so it can still be
-  // force-clicked if a just-closed overlay is mid-animation.
-  returnDateInput = (): Locator => this.page.locator('input[aria-labelledby="ff-rt-return-label"]').first();
+  returnDateInput = (): Locator => this.page.locator('input[aria-labelledby="ff-rt-return-label"]');
 
-  calendar = (): Locator => this.page.locator('.am-datepicker, .calendar-modal').first();
+  // ng-bootstrap datepicker — a third-party lib, so no Amtrak test-ids anywhere in it.
+  // `.first()` is load-bearing: the union matches the outer `.calendar-modal` wrapper AND
+  // the inner `.am-datepicker`, both visible while open; we want the outer (Escape /
+  // outside-click dismissal targets it). The nav has one control (not one per grid).
+  calendar = (): Locator => this.page.locator('.calendar-modal, .am-datepicker').first();
 
-  calendarNextMonthButton = (): Locator =>
-    this.page.getByRole('button', { name: 'Next month' }).first();
+  calendarNextMonthButton = (): Locator => this.page.getByRole('button', { name: 'Next month' });
 
-  calendarPreviousMonthButton = (): Locator =>
-    this.page.getByRole('button', { name: 'Previous month' }).first();
+  calendarPreviousMonthButton = (): Locator => this.page.getByRole('button', { name: 'Previous month' });
 
   /** A day cell, addressed by ng-bootstrap's accessible label, e.g. "Thursday, September 10, 2026". */
   calendarDay = (date: Date): Locator =>
-    this.page.getByRole('gridcell', { name: formatDayLabel(date) }).first();
+    this.page.getByRole('gridcell', { name: formatDayLabel(date) });
 
   // ---------------------------------------------------------------------------
   // Passengers
   // ---------------------------------------------------------------------------
 
   travelerButton = (): Locator =>
-    this.page.locator('[amt-auto-test-id="traveler-dropdown-button"]').filter({ visible: true }).first();
+    this.page.locator('[amt-auto-test-id="traveler-dropdown-button"]').filter({ visible: true });
 
+  // Steppers: `traveler-component-<key>-incr-button` / `-dcr-button`, where <key> is the
+  // widget's own (inconsistent) singular/plural — see `TRAVELER_KEY`.
   addPassengerButton = (type: PassengerType): Locator =>
-    this.page.getByRole('button', { name: `+ Add ${SINGULAR[type]}`, exact: true });
+    this.page.locator(`[amt-auto-test-id="traveler-component-${TRAVELER_KEY[type]}-incr-button"]`).filter({ visible: true });
 
   removePassengerButton = (type: PassengerType): Locator =>
-    this.page.getByRole('button', { name: `- Remove ${SINGULAR[type]}`, exact: true });
+    this.page.locator(`[amt-auto-test-id="traveler-component-${TRAVELER_KEY[type]}-dcr-button"]`).filter({ visible: true });
 
   /** "Reset" in the Travelers popover — also the marker that the popover is open. */
   resetTravelersButton = (): Locator =>
-    this.page.getByRole('button', { name: 'Reset', exact: true }).filter({ visible: true }).first();
+    this.page.locator('[amt-auto-test-id="traveler-clear"]').filter({ visible: true });
 
-  /** "Done" in the Travelers popover. Only present while the popover is open (the
-   *  datepicker has its own "Done", so callers must not have the calendar open too). */
+  /** "Done" in the Travelers popover. Its own test-id — no collision with the
+   *  datepicker's "Done", so no `.first()` needed. */
   travelersDoneButton = (): Locator =>
-    this.page.getByRole('button', { name: 'Done', exact: true }).filter({ visible: true }).first();
+    this.page.locator('[amt-auto-test-id="traveler-component-discount-done-button"]').filter({ visible: true });
 
-  /** The "you need an adult" message shown when a child/youth is added with 0 adults. */
+  /** The "you need an adult" message shown when a child/youth is added with 0 adults.
+   *  No test-id; printed on two nodes (an `[role=alert]` and a `<p>`), so `.first()`. */
   passengerRequirementError = (): Locator =>
     this.page.getByText(/add at least one adult/i).first();
-
-  /** Per-traveler discount / passenger-type combobox, e.g. "Traveler 1: Adult". */
-  travelerDiscountSelect = (traveler = 1): Locator =>
-    this.page
-      .getByRole('combobox', { name: new RegExp(`Traveler ${traveler}:`, 'i') })
-      .filter({ visible: true })
-      .first();
-
-  /** Options of the open discount combobox — scoped by a distinctive label so the
-   *  station autocomplete listboxes can't match. */
-  travelerDiscountOptions = (): Locator =>
-    this.page
-      .getByRole('listbox')
-      .filter({ hasText: 'Rail Passengers Association' })
-      .getByRole('option');
-
-  // ---------------------------------------------------------------------------
-  // Coupon / promo code
-  // ---------------------------------------------------------------------------
-
-  couponToggle = (): Locator =>
-    this.page
-      .getByRole('button', { name: /add coupon/i })
-      .or(this.page.locator('[amt-auto-test-id="fare-finder-coupondropdown-button"]'))
-      .filter({ visible: true })
-      .first();
-
-  couponInput = (): Locator => this.page.locator('[amt-auto-test-id="fare-finder-rewards-coupon"]');
-
-  // ---------------------------------------------------------------------------
-  // Errors (read-only locators — assertions happen in the spec)
-  // ---------------------------------------------------------------------------
-
-  /** Any non-empty inline validation message inside the widget. */
-  anyValidationError = (): Locator =>
-    this.root().locator('mat-error, .mat-error, [role="alert"]').filter({ hasText: /\S/ });
 
   // ---------------------------------------------------------------------------
   // Multi-step journeys (the "login-style" flows the standard allows here)
@@ -228,23 +230,29 @@ export class FindTrainsForm extends BaseComponent {
     await this.findTrainsButton().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
   };
 
+  /** Type `query` into a station field. `fill` places all but the last character
+   *  atomically (nothing to leak into another field), then one real keystroke fires the
+   *  keyup the autocomplete listens on. */
+  private typeStation = async (input: Locator, query: string): Promise<void> => {
+    await input.click();
+    await input.fill(query.slice(0, -1));
+    await input.pressSequentially(query.slice(-1), { delay: 60 });
+  };
+
   /** Type into a station field and leave the suggestion list open (autocomplete tests). */
   searchStations = async (field: 'from' | 'to', query: string): Promise<void> => {
-    const input = field === 'from' ? this.fromStationInput() : this.toStationInput();
-    await input.click();
-    await input.fill('');
-    await input.pressSequentially(query, { delay: 60 });
-    await this.stationSuggestionList().waitFor({ state: 'visible', timeout: 8_000 }).catch(() => undefined);
+    await this.typeStation(this.stationField(field).locator('input'), query);
+    await this.stationSuggestionList(field).waitFor({ state: 'visible', timeout: 8_000 }).catch(() => undefined);
   };
 
   /** Type into a station field and pick the first real suggestion that matches the query. */
   selectStation = async (field: 'from' | 'to', query: string): Promise<void> => {
-    await this.selectStationInto(field === 'from' ? this.fromStationInput() : this.toStationInput(), query);
+    await this.selectStationInto(this.stationField(field), query);
   };
 
   /** Multi-City: pick a station in leg `index` (0-based). */
   selectLegStation = async (index: number, field: 'from' | 'to', query: string): Promise<void> => {
-    await this.selectStationInto(field === 'from' ? this.legFromInput(index) : this.legToInput(index), query);
+    await this.selectStationInto(this.stationField(field, index), query);
   };
 
   /** Multi-City: pick leg `index`'s departure date. */
@@ -252,7 +260,11 @@ export class FindTrainsForm extends BaseComponent {
     await this.pickDate(this.legDepartDateInput(index), date);
   };
 
-  private selectStationInto = async (input: Locator, query: string): Promise<void> => {
+  /** Fill one station `<station-search>` and commit a real station from its own list.
+   *  `field` is the container locator (see `stationField`); the input and the option list
+   *  are both resolved *inside* it so a neighbouring field's stale list is never touched. */
+  private selectStationInto = async (field: Locator, query: string): Promise<void> => {
+    const input = field.locator('input');
     // When the query is a known catalog station we target its option by 3-letter code
     // and verify the committed value against that code — picking "the first plausible
     // option" occasionally lands on the wrong station on the slower engines.
@@ -261,13 +273,14 @@ export class FindTrainsForm extends BaseComponent {
       code ? value === code || value.includes(`(${code})`) : /^[A-Z]{3}$/.test(value) || /\([A-Z]{3}\)/.test(value);
 
     for (let attempt = 0; attempt < 4; attempt += 1) {
-      await input.click();
-      await input.fill('');
-      await input.pressSequentially(query, { delay: 60 });
+      // `fill` (see `typeStation`) sets the text atomically so nothing can leak into a
+      // previously-committed field if focus shifts mid-interaction ("NYPington").
+      await this.typeStation(input, query);
 
+      // Options are scoped to this field's own list (see `stationField`).
       const match = code
-        ? this.page.getByRole('option').filter({ hasText: new RegExp(`\\(${code}\\)`) }).first()
-        : this.page
+        ? field.getByRole('option').filter({ hasText: new RegExp(`\\(${code}\\)`) }).first()
+        : field
             .getByRole('option', { name: new RegExp(escapeRegExp(query), 'i') })
             .filter({ hasText: /\([A-Z]{3}\)/ })
             .first();
@@ -282,26 +295,17 @@ export class FindTrainsForm extends BaseComponent {
         await input.press('Enter');
       }
 
-      // A clean pick settles to the code ("NYP") or a label carrying "(NYP)". A value
-      // with stray lowercase ("NYPashington", "WASon") means keystrokes landed after
-      // the option click — clear it and retry.
-      let mangled = false;
-      for (let poll = 0; poll < 14; poll += 1) {
+      // A clean pick settles the input to the code ("NYP") or a label carrying "(NYP)".
+      for (let poll = 0; poll < 20; poll += 1) {
         const value = ((await input.inputValue().catch(() => '')) ?? '').trim();
         if (committed(value)) {
           return;
         }
-        if (poll >= 4 && /[a-z]/.test(value)) {
-          mangled = true;
-          break;
-        }
         await this.page.waitForTimeout(150);
       }
 
-      if (mangled) {
-        await input.fill('').catch(() => undefined);
-        await this.page.keyboard.press('Escape').catch(() => undefined);
-      }
+      await input.fill('').catch(() => undefined);
+      await this.page.keyboard.press('Escape').catch(() => undefined);
     }
 
     // Fail loudly here rather than letting fillSearch continue and the test fail
@@ -354,17 +358,14 @@ export class FindTrainsForm extends BaseComponent {
     await this.resetTravelersButton().click();
   };
 
-  /** Open the "Traveler N" discount combobox and wait for its options to render. */
-  openTravelerDiscount = async (traveler = 1): Promise<void> => {
-    await this.travelerDiscountSelect(traveler).click();
-    await this.travelerDiscountOptions().first().waitFor({ state: 'visible', timeout: 8_000 }).catch(() => undefined);
-  };
-
-  applyCoupon = async (code: string): Promise<void> => {
-    if (!(await this.couponInput().isVisible().catch(() => false))) {
-      await this.couponToggle().click();
+  /** Set the whole party mix, stepping each type from the form default to the target. */
+  setPassengers = async (counts: Partial<PassengerCounts>): Promise<void> => {
+    const target: PassengerCounts = { ...DEFAULT_PASSENGERS, ...counts };
+    await this.openTravelers();
+    for (const type of Object.keys(target) as PassengerType[]) {
+      await this.adjustPassenger(type, target[type] - DEFAULT_PASSENGERS[type]);
     }
-    await this.couponInput().fill(code);
+    await this.page.keyboard.press('Escape');
   };
 
   /**
@@ -390,22 +391,39 @@ export class FindTrainsForm extends BaseComponent {
         await this.selectDepartureDate(trip.departDate);
       }
     }
+
+    if (hasNonDefaultPassengers(trip.passengers)) {
+      await this.setPassengers(trip.passengers);
+    }
+  };
+
+  /** How many leg rows the Multi-City form currently shows (one visible From field each). */
+  private legCount = (): Promise<number> =>
+    this.page.locator('[amt-auto-test-id="fare-finder-from-station-field-page"]').filter({ visible: true }).count();
+
+  /** Wait for the leg-row count to hold steady — switching to Multi-City re-renders the
+   *  whole widget, and a fill that lands mid-re-render loses its keystrokes or spawns a
+   *  spurious extra leg. Returns the settled count. */
+  private settledLegCount = async (): Promise<number> => {
+    let last = -1;
+    let steady = 0;
+    for (let i = 0; i < 40 && steady < 3; i += 1) {
+      const n = await this.legCount();
+      steady = n > 0 && n === last ? steady + 1 : 0;
+      last = n;
+      await this.page.waitForTimeout(150);
+    }
+    return last;
   };
 
   /** Multi-City: fill each leg's From / To / Depart, adding leg rows as needed. */
   fillLegs = async (legs: TripLeg[]): Promise<void> => {
-    // Multi-city renders two leg rows by default, but on the mobile viewport the
-    // second one can arrive a beat after the trip type is chosen — wait for the DOM
-    // to settle so leg 0's fill doesn't land in a row that is about to be re-created.
-    const wanted = Math.min(legs.length, 2);
-    for (let i = 0; i < 20 && (await this.tripLegRows().count()) < wanted; i += 1) {
-      await this.page.waitForTimeout(150);
-    }
-
+    // Default is two leg rows; only add when the itinerary genuinely has more. `if`, not
+    // `while`, and off a *settled* count so a transient re-render dip can't spawn a 3rd row.
     for (let i = 0; i < legs.length; i += 1) {
-      while ((await this.tripLegRows().count()) <= i) {
+      if ((await this.settledLegCount()) <= i) {
         await this.addTripButton().click();
-        await this.page.waitForTimeout(300);
+        await this.settledLegCount();
       }
       await this.selectLegStation(i, 'from', legs[i].from);
       await this.selectLegStation(i, 'to', legs[i].to);
@@ -475,14 +493,17 @@ export class FindTrainsForm extends BaseComponent {
     await this.ensureCalendarClosed();
   };
 
-  /** Make sure no datepicker overlay is left covering the next field. */
+  /** Make sure no datepicker overlay is left covering the next field. `Escape` is what
+   *  actually closes the ng-bootstrap picker (verified live); the click on the page's
+   *  `<h1>` is a defensive outside-click for any experiment where it doesn't — a role
+   *  target, never a coordinate, so it holds up across viewports. */
   private ensureCalendarClosed = async (): Promise<boolean> => {
     for (let i = 0; i < 5; i += 1) {
       if (!(await this.calendar().isVisible().catch(() => false))) {
         return true;
       }
       await this.page.keyboard.press('Escape').catch(() => undefined);
-      await this.root().click({ position: { x: 5, y: 5 }, force: true }).catch(() => undefined);
+      await this.page.getByRole('heading', { level: 1 }).first().click().catch(() => undefined);
       await this.page.waitForTimeout(200);
     }
     return !(await this.calendar().isVisible().catch(() => false));
@@ -515,17 +536,19 @@ const TRIP_TYPE_LABEL: Record<TripType, string> = {
   'multi-city': 'Multi-City',
 };
 
-const SINGULAR: Record<PassengerType, string> = {
+/** The widget's own key for each traveler type in its stepper test-ids — inconsistently
+ *  singular/plural (`adult`, `senior`, `youth`, `child`, `infants`). */
+const TRAVELER_KEY: Record<PassengerType, string> = {
   adults: 'adult',
   seniors: 'senior',
   youth: 'youth',
   children: 'child',
-  infants: 'infant',
+  infants: 'infants',
 };
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** "Thursday, September 10, 2026" — matches ng-bootstrap's day aria-label. */
+/** Matches ng-bootstrap's day aria-label. */
 const formatDayLabel = (date: Date): string =>
   date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
@@ -534,3 +557,6 @@ const stripTime = (date: Date): number => {
   d.setHours(0, 0, 0, 0);
   return d.getTime();
 };
+
+const hasNonDefaultPassengers = (counts: PassengerCounts): boolean =>
+  (Object.keys(counts) as PassengerType[]).some((type) => counts[type] !== DEFAULT_PASSENGERS[type]);

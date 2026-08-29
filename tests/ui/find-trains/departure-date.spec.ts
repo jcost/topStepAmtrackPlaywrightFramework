@@ -6,11 +6,9 @@ import { addDays } from '../../../src/data/test-data';
  * Non-mutating UI interaction — `@smoke`.
  */
 test.describe('Find trains form — departure date', () => {
-  test('[smoke] past dates are disabled in the departure calendar', { tag: '@smoke' }, async ({ homePage }) => {
+  test('Past dates are disabled in the departure calendar', { tag: '@smoke' }, async ({ homePage }) => {
     const yesterday = addDays(new Date(), -1);
-
     const selectable = await homePage.findTrainsForm.isDateSelectable(yesterday);
-
     expect(selectable).toBe(false);
   });
 });

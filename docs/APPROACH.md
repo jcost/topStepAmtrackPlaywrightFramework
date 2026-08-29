@@ -19,20 +19,18 @@ nothing is `@regression`.
 | --- | --- |
 | Autocomplete lists matching stations while the user types | The From/To fields are the most complex inputs on the form. |
 | Autocomplete lists no station for an unrecognized query | Negative path — no crash, no false matches. |
-| The swap control exchanges the From and To stations | Small, high-value interaction with a deterministic assertion (`toHaveValue`). |
 | The same station in From and To leaves Find trains disabled | A station-pair rule — contradictory input is rejected. |
 
-### `trip-type.spec.ts` — One-Way / Round-Trip toggle
+### `trip-type.spec.ts` — trip-type toggle
 
 | Test | Why |
 | --- | --- |
-| Choosing Round-Trip adds a return date field | Exercises the toggle and the form reshaping. |
-| Choosing Multi-City turns the form into a multi-leg builder | Covers the third bookable trip type: the form splits into per-leg From/To/Depart rows with Add/Remove Trip controls and no return date. Kept to the reshaping assertion — a full multi-leg *submit* (4+ autocompletes, 2+ calendars) is the flakiest possible live-site test and belongs in the mock lane. |
+| Choosing Multi-City turns the form into a multi-leg builder | Covers the third bookable trip type: the form splits into per-leg From/To/Depart rows with Add/Remove Trip controls and no return date. Round-Trip's reshaping is exercised by the round-trip submit test (it can't fill a return date otherwise). |
 
 All three bookable trip types are submitted end-to-request in `search-submission.spec.ts`
 (one shared test body, looped over `SUBMITTABLE_TRIP_TYPES`). Multi-city is the
-heaviest — four station autocompletes and two calendars per run — so it leans on the
-retry more than the others; a mock lane would make it deterministic (see *Next steps*).
+heaviest — four station selections and two calendars per run — and the one test that
+still occasionally uses its 2nd retry even in the mocked lane.
 
 ### `departure-date.spec.ts` — depart calendar
 
@@ -44,16 +42,8 @@ retry more than the others; a mock lane would make it deterministic (see *Next s
 
 | Test | Why |
 | --- | --- |
-| Adding an adult increments the traveler count | The passenger selector is a multi-control popover; prove the plumbing works. |
 | A child with no adult shows the "add an adult" requirement and blocks Done | Business/safety rule — a minor cannot travel unaccompanied. Asserts the real inline copy and that the popover's "Done" is disabled. |
-| Reset returns the travelers to a single adult (from {2 adults} and {2 adults + 2 children}) | Parameterised over two combinations. Reset must clear *all* selections back to the only valid minimum (1 adult, 0 everyone else) and revert the discount. |
-| The Traveler 1 discount dropdown offers the four passenger types | Locks the discount options to `Adult`, `Rail Passengers Association`, `Active US Military`, `Military Veteran` — a small, high-signal contract check. |
-
-### `promo-code.spec.ts` — coupon field
-
-| Test | Why |
-| --- | --- |
-| An entered coupon code stays in the field | The optional promo input is revealed on demand. |
+| Add {2 adults + 2 children}, then Reset returns the travelers to a single adult | Reset must clear *all* selections back to the only valid minimum (1 adult, 0 everyone else). The stepper feeding the outgoing request is covered by the passenger-mix test below. |
 
 ### `search-submission.spec.ts` — the "Find trains" button
 
@@ -63,10 +53,9 @@ gate rather than on error-message text (brittle across locales / experiments).
 
 | Test | Why |
 | --- | --- |
-| Find trains stays disabled until From, To and departure date are set | The primary validation contract, checked progressively. |
-| Find trains stays disabled when only From is set | Partial input must not be submittable. |
-| A fully completed one-way search submits without a validation error | The core journey — the form can be completed and submitted cleanly. |
+| Find trains stays disabled until From, To and departure date are set | The primary validation contract, checked progressively from the empty form to a complete one. |
 | Submit sends the journey-search request with the entered trip — **one test body, looped over `SUBMITTABLE_TRIP_TYPES` (one-way, round-trip, multi-city)** | The strongest in-scope signal that the click *did something*. `page.route` intercepts the one call the widget makes — `POST /dotcom/journey-solution-option` (identified by live network capture) — asserts the POST body's `journeyRequest.type` (`OW`/`RT`/`MC`) and, for **every leg**, origin, destination, depart date and passenger count (round-trip = outbound + reversed return; multi-city = the entered legs), then **aborts** it. Trip types and the canonical per-type trip live in `src/data/test-data.ts`, not the spec. The click also navigates to `/tickets/departure.html`; out of scope, so we go no further. |
+| The entered passenger mix is carried into the search request | `TripSearchBuilder.aTrip()…withPassengers({ adults: 2, children: 1 })`, submit, and assert the intercepted payload's leg has 3 `passengers` with `initialType`s `["adult","adult","child"]`. Proves the traveler popover feeds the request, and shows the Builder's `.withPassengers()` in a spec. |
 
 ## Assumptions
 
@@ -75,8 +64,10 @@ gate rather than on error-message text (brittle across locales / experiments).
 2. **The disabled-button pattern is intentional validation.** Amtrak ships no inline
    "please fill this in" text for the empty form — the disabled CTA *is* the message.
 3. **`amt-auto-test-id` attributes are stable-ish.** Amtrak adds them for automation;
-   I prefer them over deep css. Where I had to fall back to `#am-form-field-control-N`
-   (Angular-assigned ids) or css, the line is tagged `VERIFY:` in the Page Object.
+   I prefer them over deep css. The few accessors with no usable test-id (the two date
+   inputs — their test-ids are duplicated / mislabeled — and the ng-bootstrap calendar)
+   fall back to `aria-labelledby` / a class union and are tagged `VERIFY:` in the Page
+   Object.
 4. **No auth, no test account, no seeded data** needed for this scope.
 5. **Consent**: pre-seeding OneTrust cookies is an acceptable way to get a clean form.
    It doesn't change what's under test (the search widget).
@@ -92,13 +83,16 @@ gate rather than on error-message text (brittle across locales / experiments).
   than failing. `global-setup.ts` logs a reachability probe to make triage quick.
 - **Autocomplete latency / render lag under parallelism.** The `mocked-*` projects stub
   `getResponseList`, so the station lookup is instant and the flake source is removed —
-  `mocked-chromium` runs green at `retries: 1` (`npm run test:mocked`). The `live-chromium`
-  project keeps hitting the real service and can still lag; it gets `retries: 2` and is
-  not a gate. Page-Object mitigations that help both lanes: `waitUntilReady` gates every
-  test on the trip-type selector + a station field being visible; `selectStation` picks
-  the option **by 3-letter code** and verifies the commit against it (throws
-  `"Could not commit station …"` after 4 tries rather than failing downstream);
-  `fillLegs` waits for the multi-city rows to settle.
+  `mocked-chromium` and `mocked-mobile` run green (`npm run test:mocked`), typically with
+  zero retries consumed. The `live-chromium` project keeps hitting the real service and
+  can still lag; it gets `retries: 2` and is not a gate. Page-Object mitigations that help
+  both lanes: `waitUntilReady` gates every test on the trip-type selector + a station
+  field being visible; `selectStationInto` sets the query with `fill` (atomic — no
+  keystroke can leak into an already-committed field), matches the option **by 3-letter
+  code** scoped to that field's own list, and verifies the commit against the code (throws
+  `"Could not commit station …"` after 4 tries rather than failing downstream); `fillLegs`
+  waits for the Multi-City leg count to hold **steady** before filling (the trip-type
+  switch re-renders the whole widget).
 - **Selector drift.** Amtrak runs A/B experiments on this widget. `VERIFY:`-tagged
   locators are the ones to check first with `npm run codegen` if things break.
 

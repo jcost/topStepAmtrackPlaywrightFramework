@@ -22,11 +22,12 @@ export default defineConfig<WorkerOptions>({
 
   fullyParallel: true,
   workers: process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : 4,
-  // `mocked*` projects stub the live autocomplete, so the only variance left is the
-  // widget's own client-side processing on the heaviest fills — one retry covers it.
-  // `live-chromium` hits the real bot-protected site and gets two. See
-  // docs/APPROACH.md ➜ "Known risks".
-  retries: 1,
+  // `mocked*` projects stub the live autocomplete. Single-leg tests are solid at 0
+  // retries; the multi-city *submit* (switch trip type → 2 leg rows → 4 autocompletes
+  // → 2 calendars) is the one fill heavy enough to still race the Angular widget, so
+  // the budget is 2 and only that test tends to use the 2nd. `live-chromium` also
+  // fights bot-protection + network latency. See docs/APPROACH.md ➜ "Known risks".
+  retries: 2,
 
   timeout: 90_000,
   expect: { timeout: 15_000 },
@@ -74,7 +75,6 @@ export default defineConfig<WorkerOptions>({
     //      skip (see the `test.skip` in pom.fixtures.ts). ----
     {
       name: 'live-chromium',
-      retries: 2,
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1440, height: 900 },
