@@ -24,7 +24,7 @@ export interface TripSearch {
   returnDate?: Date;
   /** Set only for `tripType: 'multi-city'` — one entry per leg. */
   legs?: TripLeg[];
-  /** Party mix. Today always the default (1 adult); vary via a future builder method. */
+  /** Party mix. Defaults to 1 adult; override with `TripSearchBuilder.withPassengers(...)`. */
   passengers: PassengerCounts;
 }
 
@@ -134,9 +134,8 @@ export const stationCode = (query: string): string | undefined =>
 
 /**
  * Trip types whose "Find trains" submit we exercise all the way to the outgoing request,
- * with the `journeyRequest.type` each one produces (verified by live network capture,
- * 2026-08-28). The submit spec loops over this so the assertions aren't duplicated per
- * trip type.
+ * with the `journeyRequest.type` each one produces. The submit spec loops over this so
+ * the assertions aren't duplicated per trip type.
  */
 export const SUBMITTABLE_TRIP_TYPES = [
   { tripType: 'one-way', apiType: 'OW' },

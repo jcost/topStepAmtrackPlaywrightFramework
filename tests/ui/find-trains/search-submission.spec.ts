@@ -15,9 +15,9 @@ import { readLegs, readTripType } from '../../../src/support/journey-search';
 /**
  * The "Find trains" button itself: it stays `aria-disabled` until From, To and a
  * departure date are all set, and a valid submit fires exactly one request —
- * `POST /dotcom/journey-solution-option` (verified by live network capture, 2026-08-28).
- * Per the assignment scope we stop at the click; that request is intercepted and
- * aborted, and nothing about the Select Train page it navigates to is asserted.
+ * `POST /dotcom/journey-solution-option`. Per the assignment scope we stop at the click;
+ * that request is intercepted and aborted, and nothing about the Select Train page it
+ * navigates to is asserted.
  *
  * Every test here is non-mutating UI interaction, so every test is `@smoke`.
  */
@@ -49,10 +49,10 @@ test.describe('Find trains form — search submission', () => {
       // itinerary) — see `expectedLegsFor`.
       const expectedLegs = expectedLegsFor(trip);
 
-      // Intercept the one API the widget calls on submit (verified 2026-08-28:
-      // POST /dotcom/journey-solution-option). Abort it — the Select Train page the
-      // click navigates to, and Amtrak's search backend, are out of scope. We assert
-      // only that the request left carrying what the user entered.
+      // Intercept the one API the widget calls on submit (POST /dotcom/journey-solution-option)
+      // and abort it — the Select Train page the click navigates to, and Amtrak's search
+      // backend, are out of scope. We assert only that the request left carrying what the
+      // user entered.
       let searchBody: unknown;
       await page.route(homePage.findTrainsForm.journeySearchRoute, async (route) => {
         searchBody ??= route.request().postDataJSON();

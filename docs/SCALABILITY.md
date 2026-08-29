@@ -5,21 +5,20 @@ path, cheapest first.
 
 ## 0. The two axes it's already built on
 
-- **Directory = platform × domain**: `tests/ui/<domain>/`, `tests/api/<domain>/`. One
-  domain today (`find-trains`); a new area of the site (e.g. `train-status`, `account`)
-  is a new `<domain>` folder under `ui/` and/or `api/`.
+- **Directory = platform × domain**: `tests/<platform>/<domain>/`. Today just
+  `tests/ui/find-trains/`; a new area of the site (e.g. `train-status`, `account`) is a
+  new `<domain>` folder, and an API layer is a sibling `tests/api/<domain>/`.
 - **Tag = test type**: exactly two — `@smoke` (non-mutating UI interaction) and
-  `@regression` (proceeds past a boundary into the app). Mirrored by a `[type]` title
-  prefix. Changing a test's type is a retag, never a move. `--grep @smoke` composes across
-  every domain and platform.
+  `@regression` (proceeds past a boundary into the app). Changing a test's type is a
+  retag, never a move. `--grep @smoke` composes across every domain and platform.
 
 A file never changes directory to change its type, and a new domain never disturbs an
 existing one. See [FRAMEWORK.md](FRAMEWORK.md) → *Test organisation*.
 
 ### The API layer
 
-`tests/api/find-trains/` is scaffolded (README only). Bringing it live mirrors the UI
-side exactly:
+There are no API tests today. Adding one mirrors the UI side exactly — a new
+`tests/api/find-trains/` folder plus:
 
 ```
 src/clients/amtrak-fare-finder.client.ts   # thin APIRequestContext wrapper — the "Page Object" of the API layer
@@ -105,11 +104,11 @@ matchers next to each entry.
 ## 4. Faster + deterministic → the mock lane (built)
 
 `playwright.config.ts` has three projects: `mocked-chromium` (the gate), `mocked-mobile`
-(bonus), and `live-chromium` (real site, non-blocking). The `mockAmtrakApi` fixture
+(signal), and `live-chromium` (real site, non-blocking). The `mockAmtrakApi` fixture
 option (`src/fixtures/pom.fixtures.ts`) turns on `page.route` stubbing of the station
 autocomplete for the mocked projects, fed by a small captured catalog in
 `src/support/mocks/`. That removed the network-latency flakes; `mocked-chromium` runs
-green at `retries: 1`.
+green at **0 retries**.
 
 Room to grow this lane:
 

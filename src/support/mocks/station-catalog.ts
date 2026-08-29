@@ -1,9 +1,8 @@
 /**
  * Canned `AutoCompleterArcgis/getResponseList` station entries, captured verbatim from
- * the live site with the Playwright MCP on 2026-08-28. Used by the deterministic mock
- * lane (see `amtrak-routes.ts`) so the suite doesn't depend on the live autocomplete's
- * latency. Re-capture if the live payload shape changes — the `live-chromium` project
- * is what catches that.
+ * the live site. Used by the deterministic mock lane (see `amtrak-routes.ts`) so the
+ * suite doesn't depend on the live autocomplete's latency. Re-capture if the live
+ * payload shape changes — the `live-chromium` project is what catches that.
  */
 
 export interface StationEntry {

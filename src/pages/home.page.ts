@@ -18,9 +18,11 @@ export class HomePage extends BasePage {
     this.findTrainsForm = new FindTrainsForm(page);
   }
 
-  /** Navigate to the homepage and get the search widget interactive. */
+  /** Navigate to the homepage and get the search widget interactive. A real navigation
+   *  failure (DNS, timeout, connection refused) throws here; whether the *widget* then
+   *  loaded is decided by the readiness gate in `pom.fixtures.ts`. */
   open = async (): Promise<void> => {
-    await this.navigate('/home').catch(() => undefined);
+    await this.navigate('/home');
     await this.dismissConsentBanners();
     await this.findTrainsForm.waitUntilReady();
   };

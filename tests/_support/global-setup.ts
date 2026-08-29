@@ -1,9 +1,10 @@
 import { request } from '@playwright/test';
 
 /**
- * One cheap reachability probe before the run. It never fails the build — a blocked
- * or unreachable site is handled per-test by the `test.skip()` in the POM fixture.
- * The log line just makes triage faster ("was it blocked, or is a locator wrong?").
+ * One cheap reachability probe before the run. It never fails the build — a blocked or
+ * unreachable site is handled per-test by the readiness gate in the POM fixture (the live
+ * lane skips, the mocked lanes fail). The log line just makes triage faster ("was it
+ * blocked, or is a locator wrong?").
  */
 async function globalSetup(): Promise<void> {
   const target = `${process.env.BASE_URL ?? 'https://www.amtrak.com'}/home`;

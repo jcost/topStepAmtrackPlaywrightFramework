@@ -21,8 +21,8 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
 
-  # Deterministic lane — stubbed autocomplete. This is the gate that must be green.
-  e2e-mocked:
+  # The gate — deterministic desktop lane, stubbed autocomplete, 0 retries. Must be green.
+  e2e-chromium:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: lint-and-typecheck
@@ -34,24 +34,28 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:mocked
+      - run: npm test
         env:
           CI: "true"
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: playwright-report-mocked
+          name: playwright-report-chromium
           path: playwright-report/
           retention-days: 14
 
-  # Live lane — real site. Bot-protected + latency-prone, so it is allowed to fail
-  # (and the POM fixture skips gracefully when Akamai blocks the runner). Run it as a
-  # signal, not a gate.
-  e2e-live:
+  # Signals, not gates: the Pixel 7 viewport (deterministic but interaction-fragile) and
+  # the real site (bot-protected + latency-prone; the POM fixture skips when Akamai blocks
+  # the runner).
+  e2e-signals:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     needs: lint-and-typecheck
     continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [test:mobile, test:live]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -60,12 +64,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:live
+      - run: npm run ${{ matrix.lane }}
         env:
           CI: "true"
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: playwright-report-live
+          name: playwright-report-${{ matrix.lane == 'test:mobile' && 'mobile' || 'live' }}
           path: playwright-report/
           retention-days: 14

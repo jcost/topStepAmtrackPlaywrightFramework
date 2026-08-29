@@ -42,15 +42,24 @@ export const test = base.extend<PageObjects & WorkerOptions>({
 });
 
 /**
- * Graceful degradation: amtrak.com sits behind Akamai bot management. When the
- * "Find trains" widget fails to load (bot wall, outage, offline CI), skip with a
- * clear reason instead of a wall of red failures.
+ * Widget-readiness gate. On the **live** lane a non-ready widget means Akamai blocked
+ * the run (bot wall / outage) — skip with a clear reason instead of a wall of red.
+ * On the **mocked** lane there is no bot wall to blame, so a non-ready widget is a real
+ * regression (selector drift, app change) and must fail, not skip.
  */
-test.beforeEach(async ({ homePage }) => {
-  const ready = await homePage.findTrainsForm.isReady();
+test.beforeEach(async ({ homePage, mockAmtrakApi }) => {
+  if (await homePage.findTrainsForm.isReady()) {
+    return;
+  }
+  if (mockAmtrakApi) {
+    throw new Error(
+      'Mocked lane: the "Find trains" widget did not become interactive. This is not a bot wall — ' +
+        'check for selector drift / an app change. See docs/APPROACH.md ➜ "Known risks".',
+    );
+  }
   test.skip(
-    !ready,
-    'Amtrak "Find trains" widget did not load (bot protection / network). See docs/APPROACH.md ➜ "Known risks".',
+    true,
+    'Live amtrak.com did not serve an interactive widget (bot protection / network). See docs/APPROACH.md ➜ "Known risks".',
   );
 });
 

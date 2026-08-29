@@ -3,11 +3,12 @@
  *
  *   POST https://www.amtrak.com/dotcom/journey-solution-option
  *
- * (Verified against the live site with the Playwright MCP on 2026-08-28. The click also
- * navigates the browser to `/tickets/departure.html`, which is out of scope.)
+ * (Verified against the live site. The click also navigates the browser to
+ * `/tickets/departure.html`, which is out of scope.)
  *
- * `journeyRequest.type` is `OW` (one-way), `RT` (round-trip) or `MC` (multi-city), and
- * `journeyLegRequests` carries one entry per leg (1 for OW, 1 for RT, N for MC).
+ * `journeyRequest.type` is `OW` (one-way), `RT` (round-trip) or `MC` (multi-city).
+ * `journeyLegRequests` carries one entry per leg: 1 for OW, **2 for RT** (outbound +
+ * the return leg with origin/destination reversed), N for MC.
  *
  * This module types the parts of that request body the smoke test asserts on, and
  * exposes a pure reader for them. No assertions here — the spec does the `expect`.

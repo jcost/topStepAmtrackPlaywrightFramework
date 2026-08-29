@@ -29,8 +29,8 @@ nothing is `@regression`.
 
 All three bookable trip types are submitted end-to-request in `search-submission.spec.ts`
 (one shared test body, looped over `SUBMITTABLE_TRIP_TYPES`). Multi-city is the
-heaviest — four station selections and two calendars per run — and the one test that
-still occasionally uses its 2nd retry even in the mocked lane.
+heaviest — four station selections and two calendars per run — so `fillLegs` waits for the
+re-rendered leg rows to settle before it starts filling.
 
 ### `departure-date.spec.ts` — depart calendar
 
@@ -54,7 +54,7 @@ gate rather than on error-message text (brittle across locales / experiments).
 | Test | Why |
 | --- | --- |
 | Find trains stays disabled until From, To and departure date are set | The primary validation contract, checked progressively from the empty form to a complete one. |
-| Submit sends the journey-search request with the entered trip — **one test body, looped over `SUBMITTABLE_TRIP_TYPES` (one-way, round-trip, multi-city)** | The strongest in-scope signal that the click *did something*. `page.route` intercepts the one call the widget makes — `POST /dotcom/journey-solution-option` (identified by live network capture) — asserts the POST body's `journeyRequest.type` (`OW`/`RT`/`MC`) and, for **every leg**, origin, destination, depart date and passenger count (round-trip = outbound + reversed return; multi-city = the entered legs), then **aborts** it. Trip types and the canonical per-type trip live in `src/data/test-data.ts`, not the spec. The click also navigates to `/tickets/departure.html`; out of scope, so we go no further. |
+| Submit sends the journey-search request with the entered trip — **one test body, looped over `SUBMITTABLE_TRIP_TYPES` (one-way, round-trip, multi-city)** | The strongest in-scope signal that the click *did something*. `page.route` intercepts the one call the widget makes — `POST /dotcom/journey-solution-option` — asserts the POST body's `journeyRequest.type` (`OW`/`RT`/`MC`) and, for **every leg**, origin, destination, depart date and passenger count (round-trip = outbound + reversed return; multi-city = the entered legs), then **aborts** it. Trip types and the canonical per-type trip live in `src/data/test-data.ts`, not the spec. The click also navigates to `/tickets/departure.html`; out of scope, so we go no further. |
 | The entered passenger mix is carried into the search request | `TripSearchBuilder.aTrip()…withPassengers({ adults: 2, children: 1 })`, submit, and assert the intercepted payload's leg has 3 `passengers` with `initialType`s `["adult","adult","child"]`. Proves the traveler popover feeds the request, and shows the Builder's `.withPassengers()` in a spec. |
 
 ## Assumptions
@@ -77,22 +77,18 @@ gate rather than on error-message text (brittle across locales / experiments).
 
 ## Known risks / limitations
 
-- **Live third-party site.** `amtrak.com` is behind Akamai bot management. From some IPs
-  (datacenter, CI) the widget won't load at all. The suite handles this by
-  **`test.skip()`-ing with a clear reason** (see `src/fixtures/pom.fixtures.ts`) rather
-  than failing. `global-setup.ts` logs a reachability probe to make triage quick.
-- **Autocomplete latency / render lag under parallelism.** The `mocked-*` projects stub
-  `getResponseList`, so the station lookup is instant and the flake source is removed —
-  `mocked-chromium` and `mocked-mobile` run green (`npm run test:mocked`), typically with
-  zero retries consumed. The `live-chromium` project keeps hitting the real service and
-  can still lag; it gets `retries: 2` and is not a gate. Page-Object mitigations that help
-  both lanes: `waitUntilReady` gates every test on the trip-type selector + a station
-  field being visible; `selectStationInto` sets the query with `fill` (atomic — no
-  keystroke can leak into an already-committed field), matches the option **by 3-letter
-  code** scoped to that field's own list, and verifies the commit against the code (throws
-  `"Could not commit station …"` after 4 tries rather than failing downstream); `fillLegs`
-  waits for the Multi-City leg count to hold **steady** before filling (the trip-type
-  switch re-renders the whole widget).
+- **Live third-party site.** `amtrak.com` is behind Akamai bot management; from some IPs
+  (datacenter, CI) the widget won't load. The **live** lane `test.skip()`s with a clear
+  reason when that happens; the **mocked** lanes fail instead (no bot wall to blame — a
+  non-ready widget there is a real regression). `global-setup.ts` logs a reachability
+  probe for quick triage.
+- **Autocomplete latency under parallelism.** The `mocked-*` projects stub
+  `getResponseList` so the station lookup is instant; `mocked-chromium` runs green at 0
+  retries. `live-chromium` still hits the real service, so it gets `retries: 2` and is
+  not a gate. `selectStationInto` sets the query with `fill` (atomic), picks the option
+  by 3-letter code scoped to that field's list, and verifies the commit (throws
+  `"Could not commit station …"` after 4 tries); `fillLegs` waits for the Multi-City leg
+  count to settle before filling.
 - **Selector drift.** Amtrak runs A/B experiments on this widget. `VERIFY:`-tagged
   locators are the ones to check first with `npm run codegen` if things break.
 

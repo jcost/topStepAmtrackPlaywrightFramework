@@ -8,8 +8,8 @@ Two independent axes, kept independent so neither forces a reshuffle of the othe
 
 | Axis | Mechanism | Values (today) |
 | --- | --- | --- |
-| **Where a test runs / what it covers** | directory | `tests/ui/<domain>/`, `tests/api/<domain>/` — one domain, `find-trains` |
-| **What kind of test it is** | Playwright tag + `[type]` title prefix | exactly two: `@smoke`, `@regression` |
+| **Where a test runs / what it covers** | directory — `tests/<platform>/<domain>/` | `tests/ui/find-trains/` (one platform, one domain) |
+| **What kind of test it is** | Playwright tag | exactly two: `@smoke`, `@regression` |
 
 ### The two types
 
@@ -19,35 +19,32 @@ Two independent axes, kept independent so neither forces a reshuffle of the othe
 | **`@regression`** | The test proceeds *past a boundary* into the app — a results page, a booking step, anything that mutates state. | Submit the search and assert results render (out of scope here) |
 
 Only these two. No `@edge`, no `@e2e`. **This suite stops at the "Find trains" button
-click, so every test in it is `@smoke`** — there are no `@regression` tests yet, and that
-is expected for the assignment scope. The tag exists for when the suite grows past the
-button.
+click, so every test in it is `@smoke`** — there are no `@regression` tests, and that is
+expected for the assignment scope. The tag exists for when the suite grows past the
+button ([SCALABILITY.md](SCALABILITY.md)).
 
 ```
 tests/
-├── ui/find-trains/                  # browser-driven, uses Page Objects (src/pages/)
-│   ├── station-selection.spec.ts    # From/To autocomplete, same-station rule
-│   ├── trip-type.spec.ts            # Multi-City reshaping (RT reshaping covered by the RT submit)
-│   ├── departure-date.spec.ts       # depart calendar constraints
-│   ├── passenger-selection.spec.ts  # traveler popover + steppers
-│   └── search-submission.spec.ts    # Find trains button gating + firing the request
-└── api/find-trains/                 # request-context driven, uses API clients (src/clients/) — scaffold
-    └── README.md
+├── _support/global-setup.ts        # one reachability probe (non-fatal)
+└── ui/find-trains/                  # browser-driven, uses Page Objects (src/pages/)
+    ├── station-selection.spec.ts    # From/To autocomplete, same-station rule
+    ├── trip-type.spec.ts            # Multi-City reshaping (RT reshaping covered by the RT submit)
+    ├── departure-date.spec.ts       # depart calendar constraints
+    ├── passenger-selection.spec.ts  # traveler popover + steppers
+    └── search-submission.spec.ts    # Find trains button gating + firing the request
 ```
 
 One spec file per **feature of the form**, named for what it covers. Test titles say what
-happens on the app (`[smoke] the same station in From and To leaves Find trains disabled`),
-so the reporter output reads as a description of behaviour.
+happens on the app (`the same station in From and To leaves Find trains disabled`), so the
+reporter output reads as a description of behaviour.
 
 - **Directories never change** as test types are added — you never move a file to
   "promote" it from smoke to regression, you retag it.
-- **The type is in the title too** — every test name is prefixed `[smoke]` / `[regression]`
-  so the type is legible in the reporter output and the Playwright UI, not just via
-  `--grep`. The prefix and the `tag` must always agree.
 - **Tags compose across the whole tree**: `playwright test --grep @smoke` runs the smoke
-  subset of *every* domain and *both* platforms.
-- **`src/pages/` (POM) is not under `tests/`** — it is shared framework code. The API
-  layer gets a parallel `src/clients/`. Specs are the only thing in `tests/`.
+  subset of *every* domain (and, once it exists, every platform).
+- **`src/pages/` (POM) is not under `tests/`** — it is shared framework code. Specs are
+  the only thing in `tests/`. A future `tests/api/` layer gets a parallel `src/clients/`
+  — see [SCALABILITY.md](SCALABILITY.md).
 
 The per-test mapping is enumerated in [TEST-PLAN.md](TEST-PLAN.md).
 
@@ -105,7 +102,7 @@ addPassengerButton = (type: PassengerType): Locator =>
     .filter({ visible: true });
 ```
 
-Parameterised where it helps (`calendarDay(date)`, `legFromInput(index)`). They return a
+Parameterised where it helps (`calendarDay(date)`, `legDepartDateInput(index)`). They return a
 `Locator` and never act or assert.
 
 ### Locator priority
@@ -261,8 +258,8 @@ Guard 1 makes any shortcut around this fail CI.
 | --- | --- | --- |
 | `fullyParallel` + `workers` | `true`, `4` | 4 parallel workers by default (`PW_WORKERS` overrides). |
 | `projects` | `mocked-chromium`, `mocked-mobile`, `live-chromium` | See "The two lanes" below. |
-| `retries` | `2` all projects | Single-leg tests never use it; it exists for the multi-city submit (mocked) and bot-protection/latency (live). |
-| `trace` / `screenshot` / `video` | on failure / first retry | Debuggable failures, cheap green runs. |
+| `retries` | per-project: `mocked-chromium` 0, `mocked-mobile` 1, `live-chromium` 2 | The gate runs at 0 — a failure there is a real bug. Mobile is viewport-fragile but not a gate; live fights bot-protection + latency. |
+| `trace` / `screenshot` / `video` | retain-on-failure | A full trace on the first failure (the gate has no retry to fall back on); nothing captured on green runs. |
 | `globalSetup` | reachability probe | Non-fatal; logs whether Amtrak answered so a wall of skips is easy to explain. |
 | `reporter` | `list` + `html` + `junit` | Console feedback, rich local report, CI-parseable XML. |
 | `use.locale` / `timezoneId` | `en-US` / `America/New_York` | Deterministic date labels in the calendar. |
@@ -272,7 +269,7 @@ Guard 1 makes any shortcut around this fail CI.
 | Project | `mockAmtrakApi` | What it proves | Gate? |
 | --- | --- | --- | --- |
 | `mocked-chromium` | `true` | The full Angular widget — typing, option rendering, value commit, `aria-disabled` validation gating, trip-type/calendar/traveler behaviour, and the `journey-solution-option` **request payload** — all against a **stubbed** `getResponseList` so the flaky geocoder latency is out of the picture. | **Yes** — must be green. |
-| `mocked-mobile` | `true` | Same, on the Pixel 7 viewport. | Bonus. |
+| `mocked-mobile` | `true` | Same, on the Pixel 7 viewport. | Signal, not a gate. |
 | `live-chromium` | `false` | The real site still serves a widget we can drive, and the real autocomplete payload still has the shape the mocks assume. Catches API drift the mocks can't. | No — allowed to flake / skip. |
 
 The mock replaces **one network response** (the station lookup), not the thing under
@@ -285,7 +282,9 @@ aborted; it is never faked into a "success". See `src/support/mocks/`.
 - **Consent**: `src/support/consent.ts` pre-seeds the OneTrust cookies so the banner
   never renders; `BasePage.dismissConsentBanners()` is a fallback click.
 - **Bot wall / outage**: the `beforeEach` in `pom.fixtures.ts` checks the widget is
-  interactive and `test.skip()`s with a reason if not.
+  interactive. On the **live** lane a non-ready widget `test.skip()`s with a reason
+  (Akamai blocked the run). On the **mocked** lanes there is no bot wall to blame, so it
+  **fails** — a non-ready widget there means selector drift or an app change.
 - **Flaky multi-step journeys**: `selectStation` and `pickDate` verify their own effect
   (value committed / calendar dismissed) and retry internally before giving up.
 

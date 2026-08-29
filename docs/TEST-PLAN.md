@@ -8,20 +8,20 @@
 | Trip type (One-Way / Round-Trip / Multi-City toggle) | Fare selection, seat maps, booking, payment |
 | From / To station autocomplete | Account / sign-in, Guest Rewards |
 | Depart / Return date pickers | Train status, schedules, other homepage modules |
-| Passenger (traveler) selector | Rail passes, Auto Train, multi-city itinerary building |
-| Coupon / promo code field | Anything the "Find trains" click navigates to |
-| "Find trains" button state + the click itself | Back-end correctness of returned journeys |
+| Passenger (traveler) selector | Rail passes, Auto Train |
+| "Find trains" button state + the click itself | Coupon / promo code field, swap (From ⇄ To) — deliberately deferred, see below |
+| | Anything the "Find trains" click navigates to; back-end correctness of returned journeys |
 
 "Up to and including the button click" — the happy path asserts the search **request is
 issued** and no validation error is shown; it does not wait for or inspect results.
 
 ## Coverage matrix
 
-Test type is a **tag** (mirrored by a `[type]` title prefix), not a folder. Two types
-only: `@smoke` (non-mutating UI interaction — fill / click / toggle / assert state) and
-`@regression` (the test proceeds past a boundary into the app). This suite stops at the
-"Find trains" button click, so **all 12 tests are `@smoke`** and there are no
-`@regression` tests — expected for the scope. See [FRAMEWORK.md](FRAMEWORK.md).
+Test type is a **tag**, not a folder. Two types only: `@smoke` (non-mutating UI
+interaction — fill / click / toggle / assert state) and `@regression` (the test proceeds
+past a boundary into the app). This suite stops at the "Find trains" button click, so
+**all 12 tests are `@smoke`** and there are no `@regression` tests — expected for the
+scope. See [FRAMEWORK.md](FRAMEWORK.md).
 
 One spec file per feature of the form. All `@smoke`. The suite is deliberately kept
 small (the brief: *"does not need to be exhaustive"*, *"2–4 hours"*) — it demonstrates
@@ -57,8 +57,8 @@ lead form, not a search, so it is out of scope.
 | --- | --- | --- |
 | TT1 | Switch to Multi-City | trip-type button reads "Multi-City"; "Add Trip" and "Remove Trip" controls visible; no return-date field (each leg is one-way) |
 
-_(Round-Trip's reshaping is covered implicitly by SS4's round-trip case — it can't fill a
-return date if the field didn't appear.)_
+_(Round-Trip's reshaping is covered implicitly by the round-trip submit case (SS3) — it
+can't fill a return date if the field didn't appear.)_
 
 ### `departure-date.spec.ts` — depart calendar
 
@@ -83,20 +83,20 @@ _(The stepper feeding the request is covered by SS5 below.)_
 | SS2–SS4 | Submit → click fires the search API — **parameterized over `SUBMITTABLE_TRIP_TYPES`** (one-way, round-trip, multi-city) | `page.route('**/dotcom/journey-solution-option')` is hit; captured POST body has the right `journeyRequest.type` (`OW`/`RT`/`MC`) and, for **every leg**, origin, destination, depart date and passenger count 1 (round-trip = outbound + reversed return; multi-city = NY→WAS then BOS→PHL). Request is **aborted** (results page out of scope). |
 | SS5 | `TripSearchBuilder …withPassengers({ adults: 2, children: 1 })` → submit | captured POST body's leg carries 3 `passengers` entries; their `initialType`s are `["adult", "adult", "child"]`. Proves the *party mix*, not just stations/dates, reaches the request; exercises the Builder's `.withPassengers()`. |
 
-### API — `tests/api/find-trains/` (scaffold)
+### API layer
 
-No tests yet — the assignment scope is the UI form. The directory and its README show
-where request-level tests (station-autocomplete contract, `journey-solution-option`
-validation) would land, tagged the same `@smoke` / `@regression` way.
+No API tests — the assignment scope is the UI form. A request-level layer
+(station-autocomplete contract, `journey-solution-option` validation) would land under a
+new `tests/api/find-trains/` with a parallel `src/clients/`; see [SCALABILITY.md](SCALABILITY.md).
 
 ## Environments
 
 | | |
 | --- | --- |
-| Projects | `mocked-chromium` (1440×900, stubbed autocomplete — the gate), `mocked-mobile` (Pixel 7, bonus), `live-chromium` (real site, not a gate) |
+| Projects | `mocked-chromium` (1440×900, stubbed autocomplete — the gate), `mocked-mobile` (Pixel 7, signal), `live-chromium` (real site, not a gate) |
 | Base URL | `https://www.amtrak.com` (`BASE_URL` to override) |
 | Parallelism | 4 workers, `fullyParallel` |
-| Retries | 2 (only the multi-city submit tends to use the 2nd) |
+| Retries | `mocked-chromium` 0, `mocked-mobile` 1, `live-chromium` 2 |
 
 ## Not automated here (documented in [APPROACH.md](APPROACH.md) → *next steps*)
 
