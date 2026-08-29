@@ -39,7 +39,7 @@ import { BaseComponent } from './base.component';
  * The accessors that fall back past the test-id tier (`departDateInput`, `returnDateInput`
  * on `aria-labelledby`; the calendar container + controls; `tripTypeOption`) each carry a
  * comment saying which test-id exists and why it is unusable (duplicated, mislabeled, or
- * third-party). See docs/FRAMEWORK.md ➜ "Locator priority".
+ * third-party). See docs/FRAMEWORK.md ➜ "Conventions / Locators".
  *
  * Contract: arrow-function locators, multi-step "journey" methods allowed, **no assertions**.
  */
@@ -273,10 +273,16 @@ export class FindTrainsForm extends BaseComponent {
     }
     const committed = (value: string): boolean => value === code || value.includes(`(${code})`);
 
-    for (let attempt = 0; attempt < 4; attempt += 1) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
       // `fill` (see `typeStation`) sets the text atomically so nothing can leak into a
       // previously-committed field if focus shifts mid-interaction ("NYPington").
       await this.typeStation(input, query);
+
+      // The trailing keystroke fires one more autocomplete response; wait for the input to
+      // re-settle (any element-swapping re-render done) before reacting to the list. A
+      // dropped keystroke just means the option below won't match and the outer loop
+      // re-types — no fixed sleep needed.
+      await input.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
 
       // Option scoped to this field's own list (see `stationField`), matched by code.
       const match = field.getByRole('option').filter({ hasText: new RegExp(`\\(${code}\\)`) }).first();
@@ -286,9 +292,23 @@ export class FindTrainsForm extends BaseComponent {
         .catch(() => false);
 
       if (appeared) {
-        await match.click();
+        // The list can rebuild between "visible" and "clicked" (a trailing autocomplete
+        // response), detaching the option mid-click. Retry the click — re-waiting for the
+        // option to be visible between tries — then fall back to keyboard selection, which
+        // is immune to the element detaching.
+        let picked = false;
+        for (let c = 0; c < 4 && !picked; c += 1) {
+          picked = await match.click({ timeout: 3_000 }).then(() => true).catch(() => false);
+          if (!picked) {
+            await match.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
+          }
+        }
+        if (!picked) {
+          await input.press('ArrowDown').catch(() => undefined);
+          await input.press('Enter').catch(() => undefined);
+        }
       } else {
-        await input.press('Enter'); // live lane only — the mock always renders the option
+        await input.press('Enter').catch(() => undefined); // live lane only — the mock always renders the option
       }
 
       // A clean pick settles the input to the code ("NYP") or a label carrying "(NYP)".
@@ -306,7 +326,7 @@ export class FindTrainsForm extends BaseComponent {
 
     // Fail loudly here rather than letting fillSearch continue and the test fail
     // downstream with a mystery "FIND TRAINS still disabled".
-    throw new Error(`Could not commit station "${query}" after 4 attempts`);
+    throw new Error(`Could not commit station "${query}" after 5 attempts`);
   };
 
   selectDepartureDate = async (date: Date): Promise<void> => {

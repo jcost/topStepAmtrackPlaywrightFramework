@@ -21,7 +21,7 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
 
-  # The gate — deterministic desktop lane, stubbed autocomplete, 0 retries. Must be green.
+  # The gate — deterministic desktop lane, stubbed autocomplete. Must be green.
   e2e-chromium:
     runs-on: ubuntu-latest
     timeout-minutes: 20

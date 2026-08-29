@@ -8,7 +8,7 @@ import { FindTrainsForm } from './components/find-trains-form.component';
  *
  * Owns the {@link FindTrainsForm} component object. Additional homepage regions
  * (global nav, deals carousel, alerts banner) would be added here as more
- * component objects as the suite grows — see docs/SCALABILITY.md.
+ * component objects as the suite grows — see docs/FRAMEWORK.md ➜ "Scaling".
  */
 export class HomePage extends BasePage {
   readonly findTrainsForm: FindTrainsForm;

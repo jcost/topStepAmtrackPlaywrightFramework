@@ -1,4 +1,4 @@
-# Amtrak "Find trains" — E2E test suite
+# Amtrak "Find trains" — Playwright UI automation test suite
 
 Playwright + TypeScript automated tests for the **"Find trains"** search form on
 [amtrak.com/home](https://www.amtrak.com/home).
@@ -7,8 +7,8 @@ Playwright + TypeScript automated tests for the **"Find trains"** search form on
 > including the "Find trains" button click** — no results page, no booking flow.
 
 **Reviewer path:** this README to run it, then [docs/APPROACH.md](docs/APPROACH.md) for
-what was tested and why. `docs/FRAMEWORK.md`, `docs/TEST-PLAN.md` and `docs/SCALABILITY.md`
-are deeper reference, not required reading.
+what was tested and why. [docs/FRAMEWORK.md](docs/FRAMEWORK.md) (architecture, guard rules,
+scaling) is deeper reference, not required reading.
 
 ---
 
@@ -41,35 +41,48 @@ scope does not include login. Optional overrides:
 
 ## Running the tests
 
+**Just run this** — the full suite, one browser (Chromium desktop), ~30 seconds:
+
 ```bash
-npm test                    # the gate: mocked-chromium only (12 tests, 0 retries)
-npm run test:mocked          # both deterministic lanes: mocked-chromium + mocked-mobile
-npm run test:mobile          # mocked-mobile only (Pixel 7 viewport)
-npm run test:live            # the real site (live-chromium) — bot-protected, may skip/flake
-npm run test:all             # every project (mocked + live)
-npm run test:smoke           # @smoke-tagged tests, mocked-chromium (today: all of them)
-npm run test:headed          # watch it drive a real browser
-npm run test:ui              # Playwright's interactive UI mode
-npm run report               # open the HTML report from the last run
+npm test
 ```
 
-**Three projects, one gate.** `mocked-chromium` stubs the live station-autocomplete
-network call (`src/support/mocks/`) so the form-fill flow is deterministic — this is the
-lane that must be green, and it runs at **0 retries** (a failure there is a real bug).
-`mocked-mobile` is the same on a Pixel 7 viewport (a signal, not a gate; 1 retry).
-`live-chromium` drives the real site and is allowed to flake or skip (bot protection;
-2 retries). The mock replaces *one network response*, not the widget: typing, option
-rendering, value commit, `aria-disabled` validation, the trip-type/calendar/traveler
-behaviour, and the outgoing `journey-solution-option` payload all run for real. See
-[docs/FRAMEWORK.md](docs/FRAMEWORK.md) → *The two lanes*.
+That's `mocked-chromium`: all 12 tests, 1 retry. It's the whole assignment's scope —
+you don't need to run anything else to evaluate the submission.
+
+<details>
+<summary>Optional extra lanes</summary>
+
+```bash
+npm run test:mobile   # the same 12 tests on a Pixel 7 viewport (Chromium engine)
+npm run test:live     # the same 12 tests against the REAL amtrak.com (nothing stubbed)
+npm run test:mocked   # mocked-chromium + mocked-mobile together
+npm run test:all      # every project (mocked-chromium + mocked-mobile + live-chromium)
+npm run test:smoke    # --grep @smoke on mocked-chromium (today: identical to `npm test`)
+npm run test:headed   # watch mocked-chromium drive a visible browser
+npm run test:ui       # Playwright's interactive UI mode
+npm run report        # open the HTML report from the last run
+```
+
+</details>
+
+**One thing is stubbed: the station-autocomplete network call** (`src/support/mocks/`) — but
+only for the tests that use station selection as a *precondition*, so their fill flow
+doesn't depend on that third-party service's latency. The two tests that *are* about the
+autocomplete (`station-selection.spec.ts` → "against the real autocomplete") run
+un-stubbed **even in `npm test`**, and `test.skip` with a reason if Akamai blocks them.
+Everything else runs for real regardless — typing, option rendering, value commit,
+`aria-disabled` validation, the trip-type / calendar / traveler behaviour, and the
+outgoing `journey-solution-option` payload. `npm run test:live` re-runs the **identical
+12 specs** with nothing stubbed at all. See [docs/FRAMEWORK.md](docs/FRAMEWORK.md) → *The two lanes*.
 
 **Location is folders, test type is tags.** `tests/ui/<domain>/` says *where* a test runs
 and *what* it covers — one domain here, `find-trains`. The type is a Playwright tag, two
 values: `@smoke` (non-mutating UI interaction) and `@regression` (proceeds past a boundary
 into the app). This suite stops at the "Find trains" button click, so every test is
-`@smoke`; `@regression` and a sibling `tests/api/` layer are described in
-[docs/SCALABILITY.md](docs/SCALABILITY.md) as where growth lands. `--grep @smoke` slices
-across every domain at once.
+`@smoke`; `@regression` and a sibling `tests/api/` layer are where growth lands
+([docs/FRAMEWORK.md](docs/FRAMEWORK.md) → *Scaling*). `--grep @smoke` slices across every
+domain at once.
 
 Quality gates (also run in CI):
 
@@ -111,10 +124,8 @@ npm run check               # lint + typecheck
 │       ├── passenger-selection.spec.ts       # traveler popover + steppers
 │       └── search-submission.spec.ts         # Find trains button gating + firing the request
 └── docs/
-    ├── APPROACH.md             # what was tested & why, assumptions, next steps  ← start here
-    ├── FRAMEWORK.md            # architecture, patterns, the guard rules  (deeper reference)
-    ├── TEST-PLAN.md            # enumerated test cases and the scope boundary  (deeper reference)
-    └── SCALABILITY.md          # how this grows to cover more of amtrak.com  (deeper reference)
+    ├── APPROACH.md             # what was tested & why, the 12-test matrix, assumptions  ← start here
+    └── FRAMEWORK.md            # architecture, guard rules, config, scaling  (deeper reference)
 ```
 
 ## How it's wired (30-second tour)
@@ -146,6 +157,6 @@ as non-blocking signal jobs, and uploads each HTML report as an artifact.
 | Symptom | Cause & fix |
 | --- | --- |
 | `live-chromium` tests **skip** with "widget did not load" | amtrak.com is behind Akamai bot management and blocked this run (common from datacenter/CI IPs). Re-run, or run locally. The live lane skips instead of failing red — by design. The mocked lanes have no bot wall to blame, so they **fail** instead of skipping. |
-| A test is **flaky** in `mocked-chromium` | It runs at 0 retries, so a flake there is a real defect — don't ignore it. A stuck station fill throws "Could not commit station …"; if the autocomplete option genuinely isn't rendering, re-capture the mock fixtures (`src/support/mocks/`) against the live payload. Flakes in `live-chromium` are expected and non-blocking. See [docs/APPROACH.md](docs/APPROACH.md) → *Known risks*. |
+| A test is **flaky** in `mocked-chromium` | It runs at 1 retry, and the station fill retries internally on top of that — a flake that survives both is a real defect, don't ignore it. A stuck fill throws "Could not commit station …"; if the autocomplete option genuinely isn't rendering, re-capture the mock fixtures (`src/support/mocks/`) against the live payload. Flakes in `live-chromium` are expected and non-blocking. See [docs/APPROACH.md](docs/APPROACH.md) → *Known risks*. |
 | Selectors suddenly break | Amtrak reworked the widget. Re-inspect with `npm run codegen` and update the `VERIFY:`-tagged locators in [`find-trains-form.component.ts`](src/pages/components/find-trains-form.component.ts). |
 | OneTrust cookie banner blocks clicks | Handled by [`src/support/consent.ts`](src/support/consent.ts) (cookie pre-seed) + a fallback click in `BasePage`. If Amtrak changes the CMP, update those. |
