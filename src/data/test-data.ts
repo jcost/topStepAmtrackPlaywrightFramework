@@ -144,6 +144,26 @@ export const SUBMITTABLE_TRIP_TYPES = [
   { tripType: 'multi-city', apiType: 'MC' },
 ] as const satisfies ReadonlyArray<{ tripType: TripType; apiType: string }>;
 
+/**
+ * The legs a `journey-solution-option` request should carry for a given trip, in order:
+ *  - multi-city  → the itinerary's legs verbatim
+ *  - round-trip  → outbound, then the return leg (origin/destination reversed)
+ *  - one-way     → a single leg
+ * Keeps the OW/RT/MC leg model in one place so the submit spec just compares.
+ */
+export const expectedLegsFor = (trip: TripSearch): TripLeg[] => {
+  if (trip.legs?.length) {
+    return trip.legs;
+  }
+  if (trip.returnDate) {
+    return [
+      { from: trip.from, to: trip.to, departDate: trip.departDate },
+      { from: trip.to, to: trip.from, departDate: trip.returnDate },
+    ];
+  }
+  return [{ from: trip.from, to: trip.to, departDate: trip.departDate }];
+};
+
 /** The canonical New-York-anchored trip the submit smoke test uses for each trip type. */
 export const standardTripFor = (tripType: TripType): TripSearch => {
   const base = TripSearchBuilder.aTrip()

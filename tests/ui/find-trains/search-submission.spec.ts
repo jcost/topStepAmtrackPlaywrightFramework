@@ -5,10 +5,10 @@ import {
   SUBMITTABLE_TRIP_TYPES,
   TripSearchBuilder,
   addDays,
+  expectedLegsFor,
   isoDate,
   standardTripFor,
   stationCode,
-  type TripLeg,
 } from '../../../src/data/test-data';
 import { readLegs, readTripType } from '../../../src/support/journey-search';
 
@@ -25,12 +25,16 @@ test.describe('Find trains form — search submission', () => {
   test('Find trains stays disabled until From, To and departure date are set', { tag: '@smoke' }, async ({
     homePage,
   }) => {
+    // Disabled on the empty form, and still disabled after each field until all three are set.
     await expect(homePage.findTrainsForm.findTrainsButton()).toHaveAttribute('aria-disabled', 'true');
 
     await homePage.findTrainsForm.selectStation('from', STATIONS.newYork.query);
-    await homePage.findTrainsForm.selectStation('to', STATIONS.washington.query);
-    await homePage.findTrainsForm.selectDepartureDate(addDays(new Date(), DEPART_LEAD_DAYS));
+    await expect(homePage.findTrainsForm.findTrainsButton()).toHaveAttribute('aria-disabled', 'true');
 
+    await homePage.findTrainsForm.selectStation('to', STATIONS.washington.query);
+    await expect(homePage.findTrainsForm.findTrainsButton()).toHaveAttribute('aria-disabled', 'true');
+
+    await homePage.findTrainsForm.selectDepartureDate(addDays(new Date(), DEPART_LEAD_DAYS));
     await expect(homePage.findTrainsForm.findTrainsButton()).toHaveAttribute('aria-disabled', 'false');
   });
 
@@ -41,16 +45,9 @@ test.describe('Find trains form — search submission', () => {
       page,
     }) => {
       const trip = standardTripFor(tripType);
-      // The legs the request should carry: explicit legs for multi-city; outbound +
-      // reversed return for round-trip; a single leg for one-way.
-      const expectedLegs: TripLeg[] =
-        trip.legs ??
-        (trip.returnDate
-          ? [
-              { from: trip.from, to: trip.to, departDate: trip.departDate },
-              { from: trip.to, to: trip.from, departDate: trip.returnDate },
-            ]
-          : [{ from: trip.from, to: trip.to, departDate: trip.departDate }]);
+      // The legs the request should carry (OW: 1; RT: outbound + reversed return; MC: the
+      // itinerary) — see `expectedLegsFor`.
+      const expectedLegs = expectedLegsFor(trip);
 
       // Intercept the one API the widget calls on submit (verified 2026-08-28:
       // POST /dotcom/journey-solution-option). Abort it — the Select Train page the

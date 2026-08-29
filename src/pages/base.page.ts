@@ -16,18 +16,13 @@ export abstract class BasePage {
     this.page.goto(path, { waitUntil: 'domcontentloaded' });
 
   /**
-   * Belt-and-braces OneTrust dismissal. The primary defence is cookie pre-seeding
-   * (see src/support/consent.ts); this handles the case where the banner still renders.
+   * Belt-and-braces OneTrust dismissal: click "Allow All" if the banner rendered despite
+   * the pre-seeded consent cookies (see src/support/consent.ts, the primary defence).
    */
   dismissConsentBanners = async (): Promise<void> => {
-    const acceptAll = this.page.locator('#onetrust-accept-btn-handler');
-    if (await acceptAll.isVisible().catch(() => false)) {
-      await acceptAll.click({ timeout: 5_000 }).catch(() => undefined);
-    }
-
-    const confirmChoices = this.page.locator('.onetrust-close-btn-handler, .save-preference-btn-handler');
-    if (await confirmChoices.first().isVisible().catch(() => false)) {
-      await confirmChoices.first().click({ timeout: 5_000 }).catch(() => undefined);
+    const allowAll = this.page.locator('#onetrust-accept-btn-handler');
+    if (await allowAll.isVisible().catch(() => false)) {
+      await allowAll.click({ timeout: 10_000 }).catch(() => undefined);
     }
   };
 }

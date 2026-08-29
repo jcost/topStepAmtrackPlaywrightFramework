@@ -117,13 +117,16 @@ export class FindTrainsForm extends BaseComponent {
   // Each station field is a `<station-search amt-auto-test-id="fare-finder-{from,to}-station-field-page">`
   // wrapping one `<input>` *and its own autocomplete `listbox`*. Everything about a field
   // — the input, the suggestion list, its options — is scoped to this container so a
-  // Multi-City leg (or a just-committed neighbour) can't cross-talk. Filter the container
-  // by visibility, not the input: once a station is committed the widget collapses the
-  // `<input>` to a code chip (so `input:visible` matches nothing) while the container
-  // stays visible. One-Way / Round-Trip show one container of each; Multi-City shows one
-  // per leg plus a hidden leftover One-Way/Round-Trip container — hence `.nth(index)`.
+  // Multi-City leg (or a just-committed neighbour) can't cross-talk. Anchored under
+  // `root()` so a same-named field elsewhere on the page can never match. Filter the
+  // container by visibility, not the input: once a station is committed the widget
+  // collapses the `<input>` to a code chip (so `input:visible` matches nothing) while the
+  // container stays visible. One-Way / Round-Trip show one container of each; Multi-City
+  // shows one per leg plus a hidden leftover One-Way/Round-Trip container — so `.nth(index)`
+  // addresses a leg (visible-DOM order == leg order; the count is settled by
+  // `settledLegCount` before any leg is filled).
   private stationField = (field: 'from' | 'to', index = 0): Locator =>
-    this.page
+    this.root()
       .locator(`[amt-auto-test-id="fare-finder-${field}-station-field-page"]`)
       .filter({ visible: true })
       .nth(index);
@@ -265,25 +268,22 @@ export class FindTrainsForm extends BaseComponent {
    *  are both resolved *inside* it so a neighbouring field's stale list is never touched. */
   private selectStationInto = async (field: Locator, query: string): Promise<void> => {
     const input = field.locator('input');
-    // When the query is a known catalog station we target its option by 3-letter code
+    // Every caller passes a known catalog station; we target its option by 3-letter code
     // and verify the committed value against that code — picking "the first plausible
     // option" occasionally lands on the wrong station on the slower engines.
     const code = stationCode(query);
-    const committed = (value: string): boolean =>
-      code ? value === code || value.includes(`(${code})`) : /^[A-Z]{3}$/.test(value) || /\([A-Z]{3}\)/.test(value);
+    if (!code) {
+      throw new Error(`selectStationInto: "${query}" is not a known station — add it to STATIONS in test-data.ts`);
+    }
+    const committed = (value: string): boolean => value === code || value.includes(`(${code})`);
 
     for (let attempt = 0; attempt < 4; attempt += 1) {
       // `fill` (see `typeStation`) sets the text atomically so nothing can leak into a
       // previously-committed field if focus shifts mid-interaction ("NYPington").
       await this.typeStation(input, query);
 
-      // Options are scoped to this field's own list (see `stationField`).
-      const match = code
-        ? field.getByRole('option').filter({ hasText: new RegExp(`\\(${code}\\)`) }).first()
-        : field
-            .getByRole('option', { name: new RegExp(escapeRegExp(query), 'i') })
-            .filter({ hasText: /\([A-Z]{3}\)/ })
-            .first();
+      // Option scoped to this field's own list (see `stationField`), matched by code.
+      const match = field.getByRole('option').filter({ hasText: new RegExp(`\\(${code}\\)`) }).first();
       const appeared = await match
         .waitFor({ state: 'visible', timeout: 10_000 })
         .then(() => true)
@@ -292,7 +292,7 @@ export class FindTrainsForm extends BaseComponent {
       if (appeared) {
         await match.click();
       } else {
-        await input.press('Enter');
+        await input.press('Enter'); // live lane only — the mock always renders the option
       }
 
       // A clean pick settles the input to the code ("NYP") or a label carrying "(NYP)".
@@ -317,8 +317,9 @@ export class FindTrainsForm extends BaseComponent {
     await this.pickDate(this.departDateInput(), date);
   };
 
-  /** Read-only helper for the "no past dates" test — returns a boolean, never asserts. */
-  isDateSelectable = async (date: Date): Promise<boolean> => {
+  /** Read-only helper for the "no past dates" test — opens the **departure** calendar and
+   *  reports whether `date` can be picked. Returns a boolean, never asserts. */
+  isDepartureDateSelectable = async (date: Date): Promise<boolean> => {
     await this.departDateInput().click({ force: true });
     if (!(await this.calendar().isVisible({ timeout: 8_000 }).catch(() => false))) {
       return false;
@@ -545,8 +546,6 @@ const TRAVELER_KEY: Record<PassengerType, string> = {
   children: 'child',
   infants: 'infants',
 };
-
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Matches ng-bootstrap's day aria-label. */
 const formatDayLabel = (date: Date): string =>

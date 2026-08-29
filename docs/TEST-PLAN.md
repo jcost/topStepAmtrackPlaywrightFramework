@@ -64,7 +64,7 @@ return date if the field didn't appear.)_
 
 | # | Test | Key assertion |
 | --- | --- | --- |
-| DD1 | Past departure date | calendar day cell for "yesterday" is `aria-disabled` / not selectable (`isDateSelectable` → `false`) |
+| DD1 | Past departure date | calendar day cell for "yesterday" is `aria-disabled` / not selectable (`isDepartureDateSelectable` → `false`) |
 
 ### `passenger-selection.spec.ts` — traveler popover
 

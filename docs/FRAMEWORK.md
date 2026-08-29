@@ -94,7 +94,7 @@ Specs reach it as `homePage.findTrainsForm.fromStationInput()`. When the homepag
 ```ts
 // the <station-search> wrapper carries the test-id; the <input> lives inside it
 private stationField = (field: 'from' | 'to', index = 0): Locator =>
-  this.page
+  this.root()
     .locator(`[amt-auto-test-id="fare-finder-${field}-station-field-page"]`)
     .filter({ visible: true })
     .nth(index);
@@ -185,7 +185,7 @@ the spec, next to the assertion about what it produced.
 
 ### Assertions live in specs, never in Page Objects
 
-Page Objects expose `Locator`s and return plain values (`isDateSelectable(): Promise<boolean>`).
+Page Objects expose `Locator`s and return plain values (`isDepartureDateSelectable(): Promise<boolean>`).
 The spec does the `expect(...)`. Enforced by lint (below).
 
 ### Test data — Builder pattern
@@ -207,6 +207,9 @@ Defaults live in one place; specs state only what's salient to them. Methods:
 `.departingInDays()`, `.withPassengers()`, `.build()`. `standardTripFor(tripType)` wraps
 the builder to return the canonical trip per bookable type, which the parameterized submit
 test loops over; the passenger-mix test above builds its trip inline.
+`expectedLegsFor(trip)` is the matching pure function for the assertion side — it turns a
+`TripSearch` into the legs the `journey-solution-option` request should carry (OW: 1;
+RT: outbound + reversed return; MC: the itinerary), so the submit spec just compares.
 
 ## The guard rails (enforced by `npm run lint`)
 
@@ -285,3 +288,12 @@ aborted; it is never faked into a "success". See `src/support/mocks/`.
   interactive and `test.skip()`s with a reason if not.
 - **Flaky multi-step journeys**: `selectStation` and `pickDate` verify their own effect
   (value committed / calendar dismissed) and retry internally before giving up.
+
+## Source control / branching
+
+This exercise was built by a single person, so commits went straight to `main`. In a team
+setting I'd branch off `develop` (or `main`, depending on the company's convention — I
+prefer `develop`): a short-lived `test/<area>` branch per change, PR-reviewed, merged into
+`develop`; then on an agreed cadence `develop` is merged into `main`, which is what the CI
+pipelines build and gate on. The framework itself doesn't assume either model — `npm run
+check` + `npm run test:mocked` are the same gate whichever branch they run on.
