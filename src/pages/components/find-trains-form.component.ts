@@ -63,7 +63,7 @@ export class FindTrainsForm extends BaseComponent {
   // Trip type
   // ---------------------------------------------------------------------------
 
-  // Single node in the DOM — `.filter(visible)` is enough, no `.first()` needed.
+  // One visible node — `.filter(visible)` is enough, no `.first()` needed.
   tripTypeButton = (): Locator =>
     this.page.locator('[amt-auto-test-id="fare-finder-travel-selection"]').filter({ visible: true });
 
@@ -111,8 +111,8 @@ export class FindTrainsForm extends BaseComponent {
   // Dates (ng-bootstrap datepicker)
   // ---------------------------------------------------------------------------
 
-  // No usable test-id (`fare-finder-return-date-roundtrip` is on 4 inputs and mislabeled).
-  // The per-field `aria-labelledby` ids are unique — the stablest hook. `VERIFY:`.
+  // VERIFY: no usable test-id (`fare-finder-return-date-roundtrip` is on 4 inputs and
+  // mislabeled); the per-field `aria-labelledby` ids are unique and the stablest hook.
   departDateInput = (): Locator =>
     this.page
       .locator('input[aria-labelledby="ff-depart-ow-label"], input[aria-labelledby="ff-rt-depart-label"]')
@@ -120,8 +120,8 @@ export class FindTrainsForm extends BaseComponent {
 
   returnDateInput = (): Locator => this.page.locator('input[aria-labelledby="ff-rt-return-label"]');
 
-  // ng-bootstrap (third-party, no test-ids). `.first()` picks the outer `.calendar-modal`
-  // wrapper over the inner `.am-datepicker` — dismissal targets the outer.
+  // VERIFY: ng-bootstrap (third-party, no test-ids). `.first()` picks the outer
+  // `.calendar-modal` wrapper over the inner `.am-datepicker` — dismissal targets the outer.
   calendar = (): Locator => this.page.locator('.calendar-modal, .am-datepicker').first();
 
   calendarNextMonthButton = (): Locator => this.page.getByRole('button', { name: 'Next month' });

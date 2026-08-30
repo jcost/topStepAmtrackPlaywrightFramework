@@ -45,7 +45,7 @@ export const DEFAULT_PASSENGERS: PassengerCounts = {
   infants: 0,
 };
 
-/** How far ahead the suite books, in days — tuned in one place so tests never rot. */
+/** How far ahead the suite searches, in days — tuned in one place so tests never rot. */
 export const DEPART_LEAD_DAYS = 14;
 export const RETURN_LEAD_DAYS = 21;
 

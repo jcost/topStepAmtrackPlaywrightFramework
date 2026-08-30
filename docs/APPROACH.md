@@ -30,7 +30,7 @@ title is the identifier — it's what shows up in the runner. Grouped below by s
 
 | Test | Type | Why / key assertion |
 | --- | --- | --- |
-| Choosing Multi-City reshapes the form into a multi-leg builder | happy | Third trip type: per-leg From/To/Depart rows, Add/Remove Trip controls, no return date. (Round-Trip's reshape is exercised by the round-trip submit test — it can't fill a return date otherwise.) |
+| Choosing Multi-City reshapes the form into a multi-leg builder | happy | Third trip type: per-leg From/To/Depart rows, Add/Remove Trip controls, no return date. (The Round-Trip reshape isn't a separate test — the round-trip submit test already drives it end to end.) |
 
 ### `departure-date.spec.ts`
 
@@ -84,7 +84,7 @@ title is the identifier — it's what shows up in the runner. Grouped below by s
 
 - **Drive past the button** into a `@regression` lane that asserts on the rendered Select
   Train page (the biggest gap in a suite that stops at the click) — see
-  [FRAMEWORK.md](FRAMEWORK.md) → *Scaling* for the stub-and-drive mechanism.
+  [FRAMEWORK.md](FRAMEWORK.md) → *Scaling* (mock the response, drive past the button).
 - **Cover the deferred inputs** — coupon / promo-code, the swap (From ⇄ To) control, the
   "Traveler N" discount dropdown option list. Each is a one-liner Page-Object addition,
   left out only to keep the suite at ~12 tests.

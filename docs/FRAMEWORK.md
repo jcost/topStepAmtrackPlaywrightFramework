@@ -21,7 +21,7 @@ Playwright  (Page, Locator)
   `HomePage`). `HomePage` composes it; new homepage regions become sibling component
   objects — no spec churn.
 
-## Test organisation — folders for location, tags for type
+## Test organization — folders for location, tags for type
 
 - **Directory = `tests/<platform>/<domain>/`** — today just `tests/ui/find-trains/`.
   Directories never change to "promote" a test; you retag it.
@@ -29,8 +29,8 @@ Playwright  (Page, Locator)
   (proceeds past a boundary into the app). This suite stops at the button click, so every
   test is `@smoke`; there are no `@regression` tests yet. `--grep @smoke` composes across
   the whole tree.
-- **`src/pages/` (POM) is not under `tests/`** — it's shared framework code. Specs are the
-  only thing in `tests/`.
+- **`src/pages/` (POM) is not under `tests/`** — it's shared framework code. Specs and global setup are the
+  only things in `tests/`.
 
 One spec file per **feature of the form**; titles say what happens on the app so reporter
 output reads as a behaviour description. Per-test coverage is in [APPROACH.md](APPROACH.md).
@@ -62,8 +62,8 @@ third-party ng-bootstrap calendar — both tagged `// VERIFY:`.
   ships the widget desktop + mobile; Multi-City renders one field per leg). Station
   accessors filter the **container**, not the `<input>` — a committed field collapses its
   input to a code chip while the `<station-search>` stays visible.
-- **`.first()`** only where a locator genuinely resolves to >1 element after that
-  (`findTrainsButton`, add/remove-trip, `calendar`, `passengerRequirementError`).
+- **`.first()`** only where a locator genuinely resolves to >1 element after that (e.g.
+  `findTrainsButton`, add/remove-trip, `calendar`, `passengerRequirementError`).
 
 ### Actions vs. multi-step methods
 
@@ -90,7 +90,7 @@ with a guard:
 | The option list rebuilds between "visible" and "clicked" (a trailing debounced response) → the element detaches mid-click | **click-retry**, then an `ArrowDown` + `Enter` **keyboard fallback** (immune to the detach) |
 | Typing char-by-char can leak stray keystrokes into an already-committed neighbouring field ("NYPington") | `fill` the body in one shot, press only the **last char** for real |
 
-Everything waits on `waitFor({ state })` (no fixed sleeps); commit is confirmed by the
+Everything waits on `waitFor({ state })`, never `waitForTimeout`; commit is confirmed by the
 input collapsing to a code chip. The loop is bounded (5 attempts) and throws a clear
 `Could not commit station "…"` rather than letting a half-filled form fail downstream as a
 mystery "FIND TRAINS still disabled". A cleaner "real keystrokes only, wait for the
@@ -171,7 +171,7 @@ intercepted to *read* the payload and aborted — never faked into a success.
 | Another site area | A new `<domain>` folder under `tests/ui/`; nothing else moves |
 | An API layer | `tests/api/<domain>/` + `src/clients/<name>.client.ts` (a thin `APIRequestContext` wrapper — the "Page Object" of the API) + `src/fixtures/api.fixtures.ts`, mirroring the POM guard. An `api` project with `testMatch: /tests\/api\//` and no browser. |
 | More test data | Drive `TripSearchBuilder` from a table of `(from, to, tripType, pax)` rows; move `STATIONS` to a JSON fixture when it grows |
-| A `@regression` lane | Stub `journey-solution-option` with a canned solution set, drive *past* the button, assert on rendered results — still no live backend |
+| A `@regression` lane | Mock `journey-solution-option` with a canned solution set, drive *past* the button, assert on rendered results — still no live backend |
 | More quality signals | `@axe-core/playwright` (no serious violations per component + keyboard-only completion); `toHaveScreenshot` visual baselines; a performance-budget check; component-contract tests against a Storybook mount |
 | CI as it grows | `--shard=i/n` across matrix jobs; `mocked` on every PR, `live` on a schedule from an allow-listed IP; publish the HTML report; `--reporter=blob` + `merge-reports` for flake tracking |
 

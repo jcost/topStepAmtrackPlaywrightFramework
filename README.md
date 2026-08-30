@@ -74,7 +74,8 @@ un-stubbed **even in `npm test`**, and `test.skip` with a reason if Akamai block
 Everything else runs for real regardless — typing, option rendering, value commit,
 `aria-disabled` validation, the trip-type / calendar / traveler behaviour, and the
 outgoing `journey-solution-option` payload. `npm run test:live` re-runs the **identical
-12 specs** with nothing stubbed at all. See [docs/FRAMEWORK.md](docs/FRAMEWORK.md) → *The two lanes*.
+12 specs** with the station lookup unstubbed too — every spec hits the real autocomplete.
+See [docs/FRAMEWORK.md](docs/FRAMEWORK.md) → *The three projects / two lanes*.
 
 **Location is folders, test type is tags.** `tests/ui/<domain>/` says *where* a test runs
 and *what* it covers — one domain here, `find-trains`. The type is a Playwright tag, two
