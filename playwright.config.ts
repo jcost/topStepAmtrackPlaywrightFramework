@@ -2,6 +2,12 @@ import { defineConfig, devices } from '@playwright/test';
 
 import type { WorkerOptions } from './src/fixtures/pom.fixtures';
 
+// Node's own clock must match the browser timezone (`use.timezoneId` below), or dates
+// computed here — "yesterday" in the past-date test, `isoDate(...)` in the submit tests —
+// land on a different calendar day than the browser renders. CI runners are UTC. Set
+// before any `Date` is constructed; workers inherit it.
+process.env.TZ = process.env.TZ ?? 'America/New_York';
+
 /**
  * Playwright config for the Amtrak "Find trains" suite. Rationale for each choice is in
  * docs/FRAMEWORK.md ➜ "Playwright config"; the inline comments below flag the non-obvious bits.

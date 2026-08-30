@@ -7,6 +7,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Runners are UTC; the suite computes dates in Node and renders the calendar in the browser
+# at this timezone (`use.timezoneId`). Both must agree or the past-date test flips near midnight.
+env:
+  TZ: America/New_York
+
 jobs:
   lint-and-typecheck:
     runs-on: ubuntu-latest

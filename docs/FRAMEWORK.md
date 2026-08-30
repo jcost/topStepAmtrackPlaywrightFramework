@@ -122,7 +122,7 @@ side — turns a `TripSearch` into the legs the request should carry.
 | `trace` / `screenshot` / `video` | `retain-on-failure` | full trace whenever a test ends failed; nothing on green runs |
 | `globalSetup` | reachability probe | non-fatal; logs whether Amtrak answered |
 | `reporter` | `list` + `html` + `junit` | console + rich local report + CI XML |
-| `use.locale` / `timezoneId` | `en-US` / `America/New_York` | deterministic calendar date labels |
+| `use.locale` / `timezoneId` | `en-US` / `America/New_York` | deterministic calendar date labels; `process.env.TZ` is pinned to the same zone so Node's date math agrees with the browser (CI runners are UTC — otherwise the past-date test flips near midnight) |
 
 ### The three projects / two lanes
 

@@ -55,7 +55,8 @@ export const addDays = (base: Date, days: number): Date => {
   return result;
 };
 
-/** `YYYY-MM-DD` in local time — matches the date portion the search API echoes back. */
+/** `YYYY-MM-DD` in the suite timezone (`TZ=America/New_York`, set in playwright.config.ts) —
+ *  matches the date portion the search API echoes back. */
 export const isoDate = (date: Date): string =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
