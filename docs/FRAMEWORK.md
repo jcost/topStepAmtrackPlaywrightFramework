@@ -74,13 +74,28 @@ third-party ng-bootstrap calendar — both tagged `// VERIFY:`.
 | `adjustPassenger('adults', 1)` | `selectDepartureDate(date)` — open calendar, walk to month, click day, confirm closed |
 
 `fillSearch` deliberately **stops before** pressing "Find trains" — that click stays in the
-spec next to the assertion. `selectStationInto` sets the query with `fill` (atomic — no
-keystroke leak into an already-committed field) and, if the widget's search doesn't fire
-(the synthetic `input` event isn't always trusted enough while a previous field is still
-re-rendering), re-types it as real keystrokes; it matches the option by 3-letter code
-scoped to that field's own list, retries the click if the list rebuilds mid-click, falls
-back to keyboard selection, and confirms the commit by the input collapsing to a code chip
-— all event-driven, no fixed sleeps. 5 internal attempts, then throws.
+spec next to the assertion.
+
+### Typing into the autocomplete — why `selectStationInto` is unusual
+
+The From/To field is a **debounced Angular autocomplete on a live third-party site**, and
+the obvious approach — `input.fill(query)` then click the first `option` — flaked ~1 run in
+20. It's the one place in the framework where a Page Object method is noticeably more
+involved than "locate → act", and that's deliberate. Three separate failure modes, each
+with a guard:
+
+| Failure mode | Guard |
+| --- | --- |
+| `fill()` fires a *synthetic* (`isTrusted: false`) `input` event that the widget sometimes ignores → no search, no options | after the `fill` + one real keystroke, if the option doesn't appear, **re-type the whole query as real keystrokes** |
+| The option list rebuilds between "visible" and "clicked" (a trailing debounced response) → the element detaches mid-click | **click-retry**, then an `ArrowDown` + `Enter` **keyboard fallback** (immune to the detach) |
+| Typing char-by-char can leak stray keystrokes into an already-committed neighbouring field ("NYPington") | `fill` the body in one shot, press only the **last char** for real |
+
+Everything waits on `waitFor({ state })` (no fixed sleeps); commit is confirmed by the
+input collapsing to a code chip. The loop is bounded (5 attempts) and throws a clear
+`Could not commit station "…"` rather than letting a half-filled form fail downstream as a
+mystery "FIND TRAINS still disabled". A cleaner "real keystrokes only, wait for the
+response" rewrite was prototyped and **stress-tested at 116/120 vs this version's 120/120**
+— it lost, so the shape here is the one that survives.
 
 ### Assertions live in specs, never in Page Objects
 

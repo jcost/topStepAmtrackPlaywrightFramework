@@ -180,8 +180,10 @@ export class FindTrainsForm extends BaseComponent {
     await this.findTrainsButton().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
   };
 
-  /** Type `query`: `fill` all but the last char (atomic — nothing leaks into another
-   *  field), then one real keystroke to trigger the autocomplete. */
+  /** Type `query` into a station field. The split is deliberate: `fill` the body in one
+   *  shot (a synchronous set — no chance of a stray char landing in an already-committed
+   *  neighbouring field if focus slips), then press only the last char for real so a
+   *  trusted keystroke actually wakes the debounced autocomplete. See `selectStationInto`. */
   private typeStation = async (input: Locator, query: string): Promise<void> => {
     await input.click();
     await input.fill(query.slice(0, -1));
@@ -209,8 +211,27 @@ export class FindTrainsForm extends BaseComponent {
     await this.pickDate(this.legDepartDateInput(index), date);
   };
 
-  /** Fill a `<station-search>` and commit a real station from its own list. `field` is the
-   *  container (see `stationField`); input + options are resolved inside it. */
+  /**
+   * Fill a `<station-search>` and commit a real station from its own list.
+   *
+   * This is deliberately more elaborate than "`input.fill(query)` → click the first
+   * option". Amtrak's From/To field is a debounced Angular autocomplete on a live
+   * third-party site, and the naive version flaked ~1 run in 20 — three distinct ways,
+   * each guarded below:
+   *   1. `fill()` dispatches a *synthetic* (`isTrusted: false`) `input` event that the
+   *      widget sometimes ignores, so no search fires and no options render →
+   *      corrective re-type with real keystrokes.
+   *   2. The option list rebuilds between "visible" and "clicked" (a trailing debounced
+   *      response), detaching the element mid-click → click-retry + keyboard fallback.
+   *   3. Typing the whole query char-by-char can leak stray keystrokes into an
+   *      already-committed neighbouring field ("NYPington") → bulk `fill` the body,
+   *      type only the last char.
+   * Every wait here is event-driven (`waitFor({ state })`); the outer loop is bounded and
+   * throws loudly rather than letting a half-filled form fail downstream as a mystery
+   * "FIND TRAINS still disabled". `field` is the container (see `stationField`); the input
+   * and its option list are both resolved inside it so a sibling field can't cross-talk.
+   * See docs/FRAMEWORK.md ➜ "Typing into the autocomplete".
+   */
   private selectStationInto = async (field: Locator, query: string): Promise<void> => {
     const input = field.locator('input');
     // Target the option by 3-letter code and verify the commit against it — "first
