@@ -13,43 +13,19 @@ import { JOURNEY_SEARCH_ROUTE } from '../../support/journey-search';
 import { BaseComponent } from './base.component';
 
 /**
- * Component object for the homepage **"Find trains"** search widget
- * (Amtrak's Angular "fare finder").
+ * Component object for the homepage **"Find trains"** widget (Amtrak's Angular "fare finder").
  *
- * Locator strategy (project standard, most-stable first):
- *   1. `[amt-auto-test-id="…"]`  — an attribute Amtrak added *for* test automation; when
- *      one exists for the control it is the single most stable hook.
- *   2. `getByRole` (role + accessible name)
- *   3. `getByLabel`
- *   4. a unique, stable `id`  (not currently needed)
- *   5. css  (`aria-labelledby` on the date inputs; class union on the calendar)
- * No `.or(...)` fallback chains — a removed test-id should break the locator loudly here,
- * not fall through to a fragile text match. `.filter({ visible: true })` picks the
- * rendered one of a duplicated set: Amtrak ships the widget twice (desktop + mobile), and
- * Multi-City renders one station field / date input per leg plus a hidden leftover
- * One-Way/Round-Trip copy. The station accessors filter the **container**, not the
- * `<input>` — a committed field collapses its input to a code chip (so `input:visible`
- * matches nothing) while the `<station-search>` stays visible; the field's own
- * autocomplete `listbox` is nested inside that container, so options are scoped there too.
- * `.first()` is used **only** where a locator still resolves to >1 element after that:
- * `findTrainsButton` / `addTripButton` / `removeTripButton` (re-render fade window),
- * `calendar` (union matches wrapper + inner), `passengerRequirementError` (message
- * printed on two nodes).
+ * Contract: locators are arrow-function properties, multi-step "journey" methods are
+ * allowed, and there are **no assertions** here (lint-enforced).
  *
- * The accessors that fall back past the test-id tier (`departDateInput`, `returnDateInput`
- * on `aria-labelledby`; the calendar container + controls; `tripTypeOption`) each carry a
- * comment saying which test-id exists and why it is unusable (duplicated, mislabeled, or
- * third-party). See docs/FRAMEWORK.md ➜ "Conventions / Locators".
- *
- * Contract: arrow-function locators, multi-step "journey" methods allowed, **no assertions**.
+ * Locators prefer `[amt-auto-test-id]` → `getByRole` → `getByLabel` → id → css, with no
+ * `.or(...)` fallbacks. Where an accessor needs a `.filter({ visible: true })`, a
+ * `.first()`, or a css fallback, the reason is in a comment right above it.
+ * Full rationale: docs/FRAMEWORK.md ➜ "Conventions".
  */
 export class FindTrainsForm extends BaseComponent {
-  /**
-   * The single API call the widget fires when a valid form is submitted — a
-   * `POST /dotcom/journey-solution-option`. Specs `page.route(...)` this glob to prove
-   * the search was kicked off. The click also navigates to `/tickets/departure.html`,
-   * which is out of scope.
-   */
+  /** The one API call a valid submit fires. Specs `page.route(...)` this to prove the
+   *  search was kicked off; the page it also navigates to is out of scope. */
   readonly journeySearchRoute = JOURNEY_SEARCH_ROUTE;
 
   constructor(page: Page) {
@@ -62,21 +38,17 @@ export class FindTrainsForm extends BaseComponent {
 
   private root = (): Locator => this.page.locator('[amt-auto-test-id="fare-finder-cmp"]');
 
-  // Two nodes carry this test-id (desktop + mobile copy of the widget); `.filter(visible)`
-  // leaves the active one. `.first()` covers the brief window during the trip-type
-  // re-render where the outgoing copy is still visible while the new one mounts.
+  // test-id ×2 (desktop + mobile); `.filter(visible)` + `.first()` for the re-render window.
   findTrainsButton = (): Locator =>
     this.page.locator('[amt-auto-test-id="fare-finder-findtrains-button"]').filter({ visible: true }).first();
 
-  /** Wait (not assert) for the widget's core controls to be interactive; swallows
-   *  timeouts so the POM fixture can `test.skip()` gracefully when the page is blocked.
-   *  Gates on the trip-type selector and a station field too, not just the submit
-   *  button — on the mobile viewport the Angular re-render lags and specs would
-   *  otherwise start interacting before the widget has settled. */
+  /** Wait (don't assert) for the core controls to be interactive; swallows timeouts so the
+   *  fixture decides whether to skip. Gates on 3 controls — the mobile re-render lags. */
   waitUntilReady = async (): Promise<void> => {
     await Promise.all(
       [this.findTrainsButton(), this.tripTypeButton(), this.fromStationInput()].map((locator) =>
-        locator.waitFor({ state: 'visible', timeout: 20_000 }).catch(() => undefined),
+        // 30s — Angular bootstrap can lag under load; a broken selector still fails.
+        locator.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => undefined),
       ),
     );
   };
@@ -95,14 +67,11 @@ export class FindTrainsForm extends BaseComponent {
   tripTypeButton = (): Locator =>
     this.page.locator('[amt-auto-test-id="fare-finder-travel-selection"]').filter({ visible: true });
 
-  // The dropdown menu items have no test-id (the `data-julie` buttons that do are a
-  // no-accessible-name side channel). One menu item per label — `.filter(visible)` → one.
+  // Menu items have no test-id (the `data-julie` ones lack an accessible name). One per label.
   tripTypeOption = (label: string): Locator =>
     this.page.getByRole('button', { name: label, exact: true }).filter({ visible: true });
 
-  /** Multi-City only: the controls that add / drop a trip leg. Amtrak's purpose-built
-   *  `amt-auto-test-id`. `.first()` covers the trip-type re-render
-   *  window when these mount, same as `findTrainsButton`. */
+  /** Multi-City add/drop-leg controls. `.first()` for the re-render window (as `findTrainsButton`). */
   addTripButton = (): Locator =>
     this.page.locator('[amt-auto-test-id="multi-city-add-trip"]').filter({ visible: true }).first();
 
@@ -113,17 +82,10 @@ export class FindTrainsForm extends BaseComponent {
   // Stations (From / To) + autocomplete
   // ---------------------------------------------------------------------------
 
-  // Each station field is a `<station-search amt-auto-test-id="fare-finder-{from,to}-station-field-page">`
-  // wrapping one `<input>` *and its own autocomplete `listbox`*. Everything about a field
-  // — the input, the suggestion list, its options — is scoped to this container so a
-  // Multi-City leg (or a just-committed neighbour) can't cross-talk. Anchored under
-  // `root()` so a same-named field elsewhere on the page can never match. Filter the
-  // container by visibility, not the input: once a station is committed the widget
-  // collapses the `<input>` to a code chip (so `input:visible` matches nothing) while the
-  // container stays visible. One-Way / Round-Trip show one container of each; Multi-City
-  // shows one per leg plus a hidden leftover One-Way/Round-Trip container — so `.nth(index)`
-  // addresses a leg (visible-DOM order == leg order; the count is settled by
-  // `settledLegCount` before any leg is filled).
+  // A `<station-search amt-auto-test-id="fare-finder-{from,to}-station-field-page">` wrapping
+  // one `<input>` and its own `listbox` — scoped to this container so legs / a just-committed
+  // neighbour can't cross-talk. Filter the *container* by visibility (a committed field
+  // collapses its input to a chip); `.nth(index)` picks a Multi-City leg by DOM order.
   private stationField = (field: 'from' | 'to', index = 0): Locator =>
     this.root()
       .locator(`[amt-auto-test-id="fare-finder-${field}-station-field-page"]`)
@@ -132,19 +94,16 @@ export class FindTrainsForm extends BaseComponent {
 
   fromStationInput = (): Locator => this.stationField('from').locator('input');
 
-  // `fare-finder-depart-date-oneway` is on the OW depart input *and* every Multi-City
-  // leg date — unique per leg once filtered to visible.
+  // test-id shared by the OW depart input and every leg date — unique once visible-filtered.
   legDepartDateInput = (index: number): Locator =>
     this.page.locator('[amt-auto-test-id="fare-finder-depart-date-oneway"]').filter({ visible: true }).nth(index);
 
-  /** The open suggestion list for a station field. Every `<station-search>` has its own
-   *  `listbox`; `getByRole` inside the (visible) container ignores the others, which linger
-   *  in the DOM holding stale options after their field commits. */
+  /** A field's open suggestion list — scoped inside its container so stale sibling lists
+   *  (which linger in the DOM after a commit) are ignored. */
   stationSuggestionList = (field: 'from' | 'to' = 'from', index = 0): Locator =>
     this.stationField(field, index).getByRole('listbox');
 
-  /** Suggestions in a field's open list that look like a real station, i.e. carry a
-   *  3-letter code such as "(NYP)" (not a "Locations" / bare city-name row). */
+  /** Suggestions that carry a 3-letter code like "(NYP)" (not a bare "Locations" row). */
   realStationSuggestions = (field: 'from' | 'to' = 'from', index = 0): Locator =>
     this.stationSuggestionList(field, index).getByRole('option').filter({ hasText: /\([A-Z]{3}\)/ });
 
@@ -152,11 +111,8 @@ export class FindTrainsForm extends BaseComponent {
   // Dates (ng-bootstrap datepicker)
   // ---------------------------------------------------------------------------
 
-  // No usable test-id for the top-level date fields: `fare-finder-depart-date-oneway`
-  // covers the OW depart but NOT the RT depart, and `fare-finder-return-date-roundtrip`
-  // is on FOUR inputs (RT depart + RT return + two hidden). The per-field
-  // `aria-labelledby` label ids (`ff-depart-ow-label` / `ff-rt-depart-label` /
-  // `ff-rt-return-label`) are each unique, so they are the stablest hook. `VERIFY:`.
+  // No usable test-id (`fare-finder-return-date-roundtrip` is on 4 inputs and mislabeled).
+  // The per-field `aria-labelledby` ids are unique — the stablest hook. `VERIFY:`.
   departDateInput = (): Locator =>
     this.page
       .locator('input[aria-labelledby="ff-depart-ow-label"], input[aria-labelledby="ff-rt-depart-label"]')
@@ -164,10 +120,8 @@ export class FindTrainsForm extends BaseComponent {
 
   returnDateInput = (): Locator => this.page.locator('input[aria-labelledby="ff-rt-return-label"]');
 
-  // ng-bootstrap datepicker — a third-party lib, so no Amtrak test-ids anywhere in it.
-  // `.first()` is load-bearing: the union matches the outer `.calendar-modal` wrapper AND
-  // the inner `.am-datepicker`, both visible while open; we want the outer (Escape /
-  // outside-click dismissal targets it). The nav has one control (not one per grid).
+  // ng-bootstrap (third-party, no test-ids). `.first()` picks the outer `.calendar-modal`
+  // wrapper over the inner `.am-datepicker` — dismissal targets the outer.
   calendar = (): Locator => this.page.locator('.calendar-modal, .am-datepicker').first();
 
   calendarNextMonthButton = (): Locator => this.page.getByRole('button', { name: 'Next month' });
@@ -185,8 +139,7 @@ export class FindTrainsForm extends BaseComponent {
   travelerButton = (): Locator =>
     this.page.locator('[amt-auto-test-id="traveler-dropdown-button"]').filter({ visible: true });
 
-  // Steppers: `traveler-component-<key>-incr-button` / `-dcr-button`, where <key> is the
-  // widget's own (inconsistent) singular/plural — see `TRAVELER_KEY`.
+  // Steppers: `traveler-component-<key>-incr/dcr-button` — `<key>` via `TRAVELER_KEY`.
   addPassengerButton = (type: PassengerType): Locator =>
     this.page.locator(`[amt-auto-test-id="traveler-component-${TRAVELER_KEY[type]}-incr-button"]`).filter({ visible: true });
 
@@ -197,13 +150,11 @@ export class FindTrainsForm extends BaseComponent {
   resetTravelersButton = (): Locator =>
     this.page.locator('[amt-auto-test-id="traveler-clear"]').filter({ visible: true });
 
-  /** "Done" in the Travelers popover. Its own test-id — no collision with the
-   *  datepicker's "Done", so no `.first()` needed. */
+  /** "Done" in the Travelers popover — its own test-id, no calendar-"Done" collision. */
   travelersDoneButton = (): Locator =>
     this.page.locator('[amt-auto-test-id="traveler-component-discount-done-button"]').filter({ visible: true });
 
-  /** The "you need an adult" message shown when a child/youth is added with 0 adults.
-   *  No test-id; printed on two nodes (an `[role=alert]` and a `<p>`), so `.first()`. */
+  /** The "add an adult" message — no test-id, printed on two nodes, so `.first()`. */
   passengerRequirementError = (): Locator =>
     this.page.getByText(/add at least one adult/i).first();
 
@@ -214,8 +165,8 @@ export class FindTrainsForm extends BaseComponent {
   selectTripType = async (tripType: TripType): Promise<void> => {
     const label = TRIP_TYPE_LABEL[tripType];
     await this.tripTypeButton().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => undefined);
-    const current = (await this.tripTypeButton().getAttribute('aria-label').catch(() => '')) ?? '';
-    if (!current.toLowerCase().includes(label.toLowerCase())) {
+    const currentLabel = (await this.tripTypeButton().getAttribute('aria-label').catch(() => '')) ?? '';
+    if (!currentLabel.toLowerCase().includes(label.toLowerCase())) {
       await this.tripTypeButton().click();
       await this.tripTypeOption(label).click();
     }
@@ -229,9 +180,8 @@ export class FindTrainsForm extends BaseComponent {
     await this.findTrainsButton().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
   };
 
-  /** Type `query` into a station field. `fill` places all but the last character
-   *  atomically (nothing to leak into another field), then one real keystroke fires the
-   *  keyup the autocomplete listens on. */
+  /** Type `query`: `fill` all but the last char (atomic — nothing leaks into another
+   *  field), then one real keystroke to trigger the autocomplete. */
   private typeStation = async (input: Locator, query: string): Promise<void> => {
     await input.click();
     await input.fill(query.slice(0, -1));
@@ -259,73 +209,76 @@ export class FindTrainsForm extends BaseComponent {
     await this.pickDate(this.legDepartDateInput(index), date);
   };
 
-  /** Fill one station `<station-search>` and commit a real station from its own list.
-   *  `field` is the container locator (see `stationField`); the input and the option list
-   *  are both resolved *inside* it so a neighbouring field's stale list is never touched. */
+  /** Fill a `<station-search>` and commit a real station from its own list. `field` is the
+   *  container (see `stationField`); input + options are resolved inside it. */
   private selectStationInto = async (field: Locator, query: string): Promise<void> => {
     const input = field.locator('input');
-    // Every caller passes a known catalog station; we target its option by 3-letter code
-    // and verify the committed value against that code — picking "the first plausible
-    // option" occasionally lands on the wrong station on the slower engines.
+    // Target the option by 3-letter code and verify the commit against it — "first
+    // plausible option" sometimes lands on the wrong station on slower engines.
     const code = stationCode(query);
     if (!code) {
       throw new Error(`selectStationInto: "${query}" is not a known station — add it to STATIONS in test-data.ts`);
     }
-    const committed = (value: string): boolean => value === code || value.includes(`(${code})`);
+    const isCommittedText = (text: string): boolean => text === code || text.includes(`(${code})`);
+    const readInputText = async (): Promise<string> => ((await input.inputValue().catch(() => '')) ?? '').trim();
+    const codedOption = field.getByRole('option').filter({ hasText: new RegExp(`\\(${code}\\)`) }).first();
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      // `fill` (see `typeStation`) sets the text atomically so nothing can leak into a
-      // previously-committed field if focus shifts mid-interaction ("NYPington").
-      await this.typeStation(input, query);
+      // A prior attempt may have committed it (input now a chip) — don't wipe a good value.
+      if (isCommittedText(await readInputText())) {
+        return;
+      }
+      // On a retry the input may be that chip — click the container to re-open it.
+      if (!(await input.isVisible().catch(() => false))) {
+        await field.click({ force: true }).catch(() => undefined);
+      }
+      await input.click();
+      await input.fill('');
 
-      // The trailing keystroke fires one more autocomplete response; wait for the input to
-      // re-settle (any element-swapping re-render done) before reacting to the list. A
-      // dropped keystroke just means the option below won't match and the outer loop
-      // re-types — no fixed sleep needed.
-      await input.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
+      // Bulk-set atomically (no per-char leak — "NYPington"), then one real keystroke.
+      await input.fill(query.slice(0, -1));
+      await input.pressSequentially(query.slice(-1), { delay: 60 });
 
-      // Option scoped to this field's own list (see `stationField`), matched by code.
-      const match = field.getByRole('option').filter({ hasText: new RegExp(`\\(${code}\\)`) }).first();
-      const appeared = await match
-        .waitFor({ state: 'visible', timeout: 10_000 })
-        .then(() => true)
-        .catch(() => false);
+      let optionVisible = await codedOption.waitFor({ state: 'visible', timeout: 5_000 }).then(() => true).catch(() => false);
+      if (!optionVisible) {
+        // No response — `fill`'s synthetic `input` event isn't always trusted enough.
+        // Re-type the whole query as real keystrokes.
+        await input.click();
+        await input.fill('');
+        await input.pressSequentially(query, { delay: 60 });
+        optionVisible = await codedOption.waitFor({ state: 'visible', timeout: 5_000 }).then(() => true).catch(() => false);
+      }
 
-      if (appeared) {
-        // The list can rebuild between "visible" and "clicked" (a trailing autocomplete
-        // response), detaching the option mid-click. Retry the click — re-waiting for the
-        // option to be visible between tries — then fall back to keyboard selection, which
-        // is immune to the element detaching.
-        let picked = false;
-        for (let c = 0; c < 4 && !picked; c += 1) {
-          picked = await match.click({ timeout: 3_000 }).then(() => true).catch(() => false);
-          if (!picked) {
-            await match.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
+      if (optionVisible) {
+        // The list can rebuild mid-click; retry, then fall back to keyboard select.
+        let optionClicked = false;
+        for (let clickAttempt = 0; clickAttempt < 4 && !optionClicked; clickAttempt += 1) {
+          optionClicked = await codedOption.click({ timeout: 3_000 }).then(() => true).catch(() => false);
+          if (!optionClicked) {
+            await codedOption.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
           }
         }
-        if (!picked) {
+        if (!optionClicked) {
           await input.press('ArrowDown').catch(() => undefined);
           await input.press('Enter').catch(() => undefined);
         }
-      } else {
-        await input.press('Enter').catch(() => undefined); // live lane only — the mock always renders the option
-      }
 
-      // A clean pick settles the input to the code ("NYP") or a label carrying "(NYP)".
-      for (let poll = 0; poll < 20; poll += 1) {
-        const value = ((await input.inputValue().catch(() => '')) ?? '').trim();
-        if (committed(value)) {
+        // Success collapses the input to a chip — check now, else wait for that (event-driven).
+        if (isCommittedText(await readInputText())) {
           return;
         }
-        await this.page.waitForTimeout(150);
+        if (await input.waitFor({ state: 'hidden', timeout: 3_000 }).then(() => true).catch(() => false)) {
+          if (isCommittedText(await readInputText())) {
+            return;
+          }
+        }
       }
 
       await input.fill('').catch(() => undefined);
       await this.page.keyboard.press('Escape').catch(() => undefined);
     }
 
-    // Fail loudly here rather than letting fillSearch continue and the test fail
-    // downstream with a mystery "FIND TRAINS still disabled".
+    // Fail loudly here, not downstream with a mystery "FIND TRAINS still disabled".
     throw new Error(`Could not commit station "${query}" after 5 attempts`);
   };
 
@@ -333,21 +286,20 @@ export class FindTrainsForm extends BaseComponent {
     await this.pickDate(this.departDateInput(), date);
   };
 
-  /** Read-only helper for the "no past dates" test — opens the **departure** calendar and
-   *  reports whether `date` can be picked. Returns a boolean, never asserts. */
+  /** "No past dates" helper — opens the departure calendar, reports if `date` is pickable. */
   isDepartureDateSelectable = async (date: Date): Promise<boolean> => {
     await this.departDateInput().click({ force: true });
     if (!(await this.calendar().isVisible({ timeout: 8_000 }).catch(() => false))) {
       return false;
     }
-    const reached = await this.walkCalendarToMonth(date);
-    const cell = this.calendarDay(date);
-    if (!reached || !(await cell.count())) {
+    const monthReached = await this.walkCalendarToMonth(date);
+    const dayCell = this.calendarDay(date);
+    if (!monthReached || !(await dayCell.count())) {
       await this.page.keyboard.press('Escape').catch(() => undefined);
       return false;
     }
-    const ariaDisabled = await cell.getAttribute('aria-disabled').catch(() => null);
-    const className = (await cell.getAttribute('class').catch(() => '')) ?? '';
+    const ariaDisabled = await dayCell.getAttribute('aria-disabled').catch(() => null);
+    const className = (await dayCell.getAttribute('class').catch(() => '')) ?? '';
     await this.page.keyboard.press('Escape').catch(() => undefined);
     return ariaDisabled !== 'true' && !className.includes('disabled');
   };
@@ -363,9 +315,9 @@ export class FindTrainsForm extends BaseComponent {
 
   /** Step one passenger type up (delta > 0) or down (delta < 0). Popover must be open. */
   adjustPassenger = async (type: PassengerType, delta: number): Promise<void> => {
-    const button = delta >= 0 ? this.addPassengerButton(type) : this.removePassengerButton(type);
-    for (let i = 0; i < Math.abs(delta); i += 1) {
-      await button.click();
+    const stepperButton = delta >= 0 ? this.addPassengerButton(type) : this.removePassengerButton(type);
+    for (let step = 0; step < Math.abs(delta); step += 1) {
+      await stepperButton.click();
     }
   };
 
@@ -377,21 +329,16 @@ export class FindTrainsForm extends BaseComponent {
 
   /** Set the whole party mix, stepping each type from the form default to the target. */
   private setPassengers = async (counts: Partial<PassengerCounts>): Promise<void> => {
-    const target: PassengerCounts = { ...DEFAULT_PASSENGERS, ...counts };
+    const targetCounts: PassengerCounts = { ...DEFAULT_PASSENGERS, ...counts };
     await this.openTravelers();
-    for (const type of Object.keys(target) as PassengerType[]) {
-      await this.adjustPassenger(type, target[type] - DEFAULT_PASSENGERS[type]);
+    for (const type of Object.keys(targetCounts) as PassengerType[]) {
+      await this.adjustPassenger(type, targetCounts[type] - DEFAULT_PASSENGERS[type]);
     }
     await this.page.keyboard.press('Escape');
   };
 
-  /**
-   * Fill the whole form from a {@link TripSearch}. This is the multi-field,
-   * "login-style" journey the standard permits inside a Page Object.
-   *
-   * It deliberately **does not** press "Find trains" — that single action stays in the
-   * test, right next to the assertion about what the click produced.
-   */
+  /** Fill the whole form from a {@link TripSearch} — the multi-field "login-style" journey.
+   *  Deliberately **does not** press "Find trains" — that click stays in the test. */
   fillSearch = async (trip: TripSearch): Promise<void> => {
     await this.selectTripType(trip.tripType);
 
@@ -401,8 +348,7 @@ export class FindTrainsForm extends BaseComponent {
       await this.selectStation('from', trip.from);
       await this.selectStation('to', trip.to);
       if (trip.tripType === 'round-trip' && trip.returnDate) {
-        // Round-trip uses one range calendar — both dates must be picked in a single
-        // open, otherwise closing after the depart click drops the pending range.
+        // RT uses one range calendar — pick both dates in a single open or the range drops.
         await this.pickDateRange(trip.departDate, trip.returnDate);
       } else {
         await this.selectDepartureDate(trip.departDate);
@@ -414,37 +360,23 @@ export class FindTrainsForm extends BaseComponent {
     }
   };
 
-  /** How many leg rows the Multi-City form currently shows (one visible From field each). */
-  private legCount = (): Promise<number> =>
-    this.page.locator('[amt-auto-test-id="fare-finder-from-station-field-page"]').filter({ visible: true }).count();
-
-  /** Wait for the leg-row count to hold steady — switching to Multi-City re-renders the
-   *  whole widget, and a fill that lands mid-re-render loses its keystrokes or spawns a
-   *  spurious extra leg. Returns the settled count. */
-  private settledLegCount = async (): Promise<number> => {
-    let last = -1;
-    let steady = 0;
-    for (let i = 0; i < 40 && steady < 3; i += 1) {
-      const n = await this.legCount();
-      steady = n > 0 && n === last ? steady + 1 : 0;
-      last = n;
-      await this.page.waitForTimeout(150);
-    }
-    return last;
-  };
-
   /** Multi-City: fill each leg's From / To / Depart, adding leg rows as needed. */
   private fillLegs = async (legs: TripLeg[]): Promise<void> => {
-    // Default is two leg rows; only add when the itinerary genuinely has more. `if`, not
-    // `while`, and off a *settled* count so a transient re-render dip can't spawn a 3rd row.
-    for (let i = 0; i < legs.length; i += 1) {
-      if ((await this.settledLegCount()) <= i) {
+    for (let legIndex = 0; legIndex < legs.length; legIndex += 1) {
+      // Wait for this leg's row to render; only Add Trip if it genuinely never appears
+      // (not off a flickering count — Multi-City shows two rows by default).
+      const legFromInput = this.stationField('from', legIndex).locator('input');
+      const rowRendered = await legFromInput
+        .waitFor({ state: 'visible', timeout: 5_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!rowRendered) {
         await this.addTripButton().click();
-        await this.settledLegCount();
+        await legFromInput.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => undefined);
       }
-      await this.selectLegStation(i, 'from', legs[i].from);
-      await this.selectLegStation(i, 'to', legs[i].to);
-      await this.selectLegDepartureDate(i, legs[i].departDate);
+      await this.selectLegStation(legIndex, 'from', legs[legIndex].from);
+      await this.selectLegStation(legIndex, 'to', legs[legIndex].to);
+      await this.selectLegDepartureDate(legIndex, legs[legIndex].departDate);
     }
   };
 
@@ -453,22 +385,21 @@ export class FindTrainsForm extends BaseComponent {
   // ---------------------------------------------------------------------------
 
   private pickDate = async (field: Locator, date: Date): Promise<void> => {
-    // Success is signalled by the calendar dismissing itself — the round-trip depart
-    // input does not echo its value back as text, so we cannot check `inputValue()`.
+    // Success = the calendar dismissing itself; the RT depart input doesn't echo its value.
     for (let attempt = 0; attempt < 3; attempt += 1) {
       await field.click({ force: true });
-      const opened = await this.calendar()
+      const calendarOpened = await this.calendar()
         .waitFor({ state: 'visible', timeout: 6_000 })
         .then(() => true)
         .catch(() => false);
-      if (!opened) {
+      if (!calendarOpened) {
         continue;
       }
 
       await this.walkCalendarToMonth(date);
-      const day = this.calendarDay(date);
-      if (await day.isVisible().catch(() => false)) {
-        await day.click();
+      const dayCell = this.calendarDay(date);
+      if (await dayCell.isVisible().catch(() => false)) {
+        await dayCell.click();
       }
 
       if (await this.ensureCalendarClosed()) {
@@ -482,25 +413,25 @@ export class FindTrainsForm extends BaseComponent {
   private pickDateRange = async (departDate: Date, returnDate: Date): Promise<void> => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       await this.departDateInput().click({ force: true });
-      const opened = await this.calendar()
+      const calendarOpened = await this.calendar()
         .waitFor({ state: 'visible', timeout: 6_000 })
         .then(() => true)
         .catch(() => false);
-      if (!opened) {
+      if (!calendarOpened) {
         continue;
       }
 
       for (const date of [departDate, returnDate]) {
         await this.walkCalendarToMonth(date);
-        const day = this.calendarDay(date);
-        if (await day.isVisible().catch(() => false)) {
-          await day.click();
+        const dayCell = this.calendarDay(date);
+        if (await dayCell.isVisible().catch(() => false)) {
+          await dayCell.click();
         }
       }
 
-      const done = this.page.getByRole('button', { name: 'Done', exact: true }).filter({ visible: true }).first();
-      if (await done.isVisible().catch(() => false)) {
-        await done.click().catch(() => undefined);
+      const doneButton = this.page.getByRole('button', { name: 'Done', exact: true }).filter({ visible: true }).first();
+      if (await doneButton.isVisible().catch(() => false)) {
+        await doneButton.click().catch(() => undefined);
       }
 
       if (await this.ensureCalendarClosed()) {
@@ -510,12 +441,10 @@ export class FindTrainsForm extends BaseComponent {
     await this.ensureCalendarClosed();
   };
 
-  /** Make sure no datepicker overlay is left covering the next field. `Escape` is what
-   *  actually closes the ng-bootstrap picker (verified live); the click on the page's
-   *  `<h1>` is a defensive outside-click for any experiment where it doesn't — a role
-   *  target, never a coordinate, so it holds up across viewports. */
+  /** Dismiss any leftover datepicker overlay. `Escape` does it; the `<h1>` click is a
+   *  defensive outside-click (a role target, not a coordinate). */
   private ensureCalendarClosed = async (): Promise<boolean> => {
-    for (let i = 0; i < 5; i += 1) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
       if (!(await this.calendar().isVisible().catch(() => false))) {
         return true;
       }
@@ -527,18 +456,18 @@ export class FindTrainsForm extends BaseComponent {
   };
 
   private walkCalendarToMonth = async (date: Date): Promise<boolean> => {
-    const goForward = stripTime(date) >= stripTime(new Date());
-    for (let step = 0; step < 18; step += 1) {
+    const targetIsInFuture = stripTime(date) >= stripTime(new Date());
+    for (let attempt = 0; attempt < 18; attempt += 1) {
       if (await this.calendarDay(date).isVisible().catch(() => false)) {
         return true;
       }
-      const navButton = goForward ? this.calendarNextMonthButton() : this.calendarPreviousMonthButton();
+      const navButton = targetIsInFuture ? this.calendarNextMonthButton() : this.calendarPreviousMonthButton();
       if (await navButton.isDisabled().catch(() => true)) {
         return this.calendarDay(date).isVisible().catch(() => false);
       }
       await navButton.click();
-      // Wait for the target day to render rather than sleeping a fixed beat; if this
-      // month still doesn't contain it the wait lapses and the loop pages on.
+      // Wait for the target day to render instead of a fixed sleep; lapses if this month
+      // doesn't contain it and the loop pages on.
       await this.calendarDay(date).waitFor({ state: 'visible', timeout: 800 }).catch(() => undefined);
     }
     return false;
@@ -555,8 +484,7 @@ const TRIP_TYPE_LABEL: Record<TripType, string> = {
   'multi-city': 'Multi-City',
 };
 
-/** The widget's own key for each traveler type in its stepper test-ids — inconsistently
- *  singular/plural (`adult`, `senior`, `youth`, `child`, `infants`). */
+/** The widget's own (inconsistently singular/plural) key per traveler type in its stepper test-ids. */
 const TRAVELER_KEY: Record<PassengerType, string> = {
   adults: 'adult',
   seniors: 'senior',
@@ -570,9 +498,9 @@ const formatDayLabel = (date: Date): string =>
   date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
 const stripTime = (date: Date): number => {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
+  const midnight = new Date(date);
+  midnight.setHours(0, 0, 0, 0);
+  return midnight.getTime();
 };
 
 const hasNonDefaultPassengers = (counts: PassengerCounts): boolean =>

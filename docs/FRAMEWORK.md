@@ -74,11 +74,13 @@ third-party ng-bootstrap calendar — both tagged `// VERIFY:`.
 | `adjustPassenger('adults', 1)` | `selectDepartureDate(date)` — open calendar, walk to month, click day, confirm closed |
 
 `fillSearch` deliberately **stops before** pressing "Find trains" — that click stays in the
-spec next to the assertion about what it produced. `selectStationInto` sets the query with
-`fill` (atomic — no keystroke leak into an already-committed field), waits for the option
-list to settle (event-driven, no fixed sleeps), matches the option by 3-letter code scoped
-to that field's own list, retries the click if the list rebuilds mid-click, falls back to
-keyboard selection, and verifies the commit (5 internal attempts, then throws).
+spec next to the assertion. `selectStationInto` sets the query with `fill` (atomic — no
+keystroke leak into an already-committed field) and, if the widget's search doesn't fire
+(the synthetic `input` event isn't always trusted enough while a previous field is still
+re-rendering), re-types it as real keystrokes; it matches the option by 3-letter code
+scoped to that field's own list, retries the click if the list rebuilds mid-click, falls
+back to keyboard selection, and confirms the commit by the input collapsing to a code chip
+— all event-driven, no fixed sleeps. 5 internal attempts, then throws.
 
 ### Assertions live in specs, never in Page Objects
 

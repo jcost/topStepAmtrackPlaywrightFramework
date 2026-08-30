@@ -2,16 +2,10 @@ import type { Page } from '@playwright/test';
 import { LOCATION_RESULT, STATION_CATALOG } from './station-catalog';
 
 /**
- * The deterministic mock lane.
- *
- * The live station autocomplete (`AutoCompleterArcgis/getResponseList`) is the one call
- * on the critical path whose latency, under 4 workers × N browser projects, produces the
- * "a field didn't commit" flakes. Stubbing it makes the whole fill flow deterministic and
- * fast without touching worker count. Everything else the widget needs is client-side
- * (the calendar, the traveler popover) or already intercepted by the spec
- * (`journey-solution-option` is aborted in the submit tests).
- *
- * Enabled per-project via the `mockAmtrakApi` fixture option (see `pom.fixtures.ts`).
+ * The deterministic mock lane: stub the one latency-prone call on the fill path — the
+ * station autocomplete (`AutoCompleterArcgis/getResponseList`) — so the flow is fast and
+ * deterministic. Everything else runs for real. Enabled per-project via the `mockAmtrakApi`
+ * fixture option; see docs/FRAMEWORK.md ➜ "The three projects / two lanes".
  */
 
 const AUTOCOMPLETE = /AutoCompleterArcgis\/getResponseList/;

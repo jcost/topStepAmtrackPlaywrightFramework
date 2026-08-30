@@ -3,19 +3,8 @@ import { defineConfig, devices } from '@playwright/test';
 import type { WorkerOptions } from './src/fixtures/pom.fixtures';
 
 /**
- * Playwright configuration for the Amtrak "Find trains" suite.
- *
- * Key decisions (see docs/FRAMEWORK.md for the rationale):
- *  - `fullyParallel` + `workers: 4`  -> four parallel workers by default.
- *  - `baseURL`                       -> tests navigate with relative paths ('/home').
- *  - `retries: 1`                    -> one retry on every project; the mocked lanes are
- *                                      deterministic (the flake-prone station fill has its
- *                                      own internal retry), so the budget is a thin safety
- *                                      net, not a crutch.
- *  - `trace` / `screenshot` / `video`-> captured only when a test fails or retries.
- *  - `globalSetup`                   -> one reachability probe against amtrak.com; the
- *                                      per-test readiness check in the POM fixture will
- *                                      `test.skip()` gracefully if Akamai blocks the widget.
+ * Playwright config for the Amtrak "Find trains" suite. Rationale for each choice is in
+ * docs/FRAMEWORK.md ➜ "Playwright config"; the inline comments below flag the non-obvious bits.
  */
 export default defineConfig<WorkerOptions>({
   testDir: './tests',

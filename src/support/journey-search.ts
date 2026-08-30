@@ -1,17 +1,9 @@
 /**
- * The "Find trains" widget fires a single API call when a valid search is submitted:
+ * The one API call a valid submit fires: `POST /dotcom/journey-solution-option`.
+ * `journeyRequest.type` is `OW` / `RT` / `MC`; `journeyLegRequests` has one entry per leg
+ * — 1 for OW, **2 for RT** (outbound + reversed return), N for MC.
  *
- *   POST https://www.amtrak.com/dotcom/journey-solution-option
- *
- * (Verified against the live site. The click also navigates the browser to
- * `/tickets/departure.html`, which is out of scope.)
- *
- * `journeyRequest.type` is `OW` (one-way), `RT` (round-trip) or `MC` (multi-city).
- * `journeyLegRequests` carries one entry per leg: 1 for OW, **2 for RT** (outbound +
- * the return leg with origin/destination reversed), N for MC.
- *
- * This module types the parts of that request body the smoke test asserts on, and
- * exposes a pure reader for them. No assertions here — the spec does the `expect`.
+ * Types the asserted parts of that body + a pure reader. No assertions here.
  */
 
 /** Glob for `page.route(...)` — the one endpoint that means "the search was kicked off". */
@@ -51,6 +43,6 @@ export const readLegs = (body: unknown): Leg[] => {
     destinationCode: leg?.destination?.code,
     departDateTime: leg?.origin?.schedule?.departureDateTime,
     passengerCount: leg?.passengers?.length ?? 0,
-    passengerTypes: (leg?.passengers ?? []).map((p) => p?.initialType ?? '').filter(Boolean),
+    passengerTypes: (leg?.passengers ?? []).map((passenger) => passenger?.initialType ?? '').filter(Boolean),
   }));
 };

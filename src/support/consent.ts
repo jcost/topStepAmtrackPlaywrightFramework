@@ -1,13 +1,9 @@
 import type { BrowserContext } from '@playwright/test';
 
 /**
- * amtrak.com uses OneTrust for cookie consent. If the banner (or its "Preference
- * Center" dark overlay) is showing, it intercepts pointer events and every click
- * into the search form fails.
- *
- * Pre-seeding the OneTrust cookies suppresses the banner entirely, which is far more
- * reliable than racing to click "Accept" after load. `BasePage.dismissConsentBanners`
- * stays as a belt-and-braces fallback.
+ * amtrak.com's OneTrust consent banner intercepts pointer events until dismissed.
+ * Pre-seeding its cookies suppresses it entirely — more reliable than racing to click
+ * "Accept" after load. `BasePage.dismissConsentBanners` is the fallback.
  */
 export const seedAmtrakConsent = async (context: BrowserContext): Promise<void> => {
   const now = new Date().toISOString();

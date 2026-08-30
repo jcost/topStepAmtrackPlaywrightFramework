@@ -74,19 +74,20 @@ test.describe('Find trains form — search submission', () => {
       const legs = readLegs(searchBody);
       expect(legs).toHaveLength(expectedLegs.length);
 
-      expectedLegs.forEach((expected, i) => {
-        expect(legs[i].destinationCode).toBe(stationCode(expected.to));
-        expect(legs[i].departDateTime).toContain(isoDate(expected.departDate));
-        expect(legs[i].passengerCount).toBe(1); // mirrors the form default of 1 adult
+      expectedLegs.forEach((expectedLeg, legIndex) => {
+        const actualLeg = legs[legIndex];
+        expect(actualLeg.destinationCode).toBe(stationCode(expectedLeg.to));
+        expect(actualLeg.departDateTime).toContain(isoDate(expectedLeg.departDate));
+        expect(actualLeg.passengerCount).toBe(1); // mirrors the form default of 1 adult
 
-        if (i === 0) {
-          expect(legs[i].originCode).toBe(stationCode(expected.from));
+        if (legIndex === 0) {
+          expect(actualLeg.originCode).toBe(stationCode(expectedLeg.from));
         } else {
-          // Live-widget quirk: legs after the first can echo the
-          // origin as a display name ("Boston") instead of the code ("BOS"). Accept both.
-          const code = stationCode(expected.from);
-          const city = expected.from.split(',')[0];
-          expect(legs[i].originCode).toMatch(new RegExp(`^(${code}|${city})`, 'i'));
+          // Live-widget quirk: legs after the first can echo the origin as a display name
+          // ("Boston") instead of the code ("BOS"). Accept either.
+          const expectedOriginCode = stationCode(expectedLeg.from);
+          const expectedOriginCity = expectedLeg.from.split(',')[0];
+          expect(actualLeg.originCode).toMatch(new RegExp(`^(${expectedOriginCode}|${expectedOriginCity})`, 'i'));
         }
       });
     });

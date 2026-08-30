@@ -6,9 +6,8 @@ import { DEPART_LEAD_DAYS, STATIONS, addDays } from '../../../src/data/test-data
  * same-origin-and-destination rule. All non-mutating UI interaction — `@smoke`.
  */
 test.describe('Find trains form — station selection', () => {
-  // ST1 / ST2 test the autocomplete integration itself, so they run against the **real**
-  // `getResponseList` even in the mocked projects — a stub here would only prove the stub
-  // echoes its fixture. They `test.skip` with a reason if Akamai blocks the run.
+  // These two test the autocomplete itself, so they hit the real `getResponseList` even in
+  // the mocked projects (a stub would just prove the stub echoes its fixture). Skip if blocked.
   test.describe('against the real autocomplete', () => {
     test.use({ mockAmtrakApi: false });
 
@@ -28,8 +27,7 @@ test.describe('Find trains form — station selection', () => {
     });
   });
 
-  // ST3 uses station selection only as a precondition for the same-station rule, so it
-  // keeps the mocked autocomplete (deterministic fill) in the mocked projects.
+  // This one only uses station selection as a precondition, so it keeps the mocked autocomplete.
   test('The same station in From and To leaves Find trains disabled', { tag: '@smoke' }, async ({
     homePage,
   }) => {

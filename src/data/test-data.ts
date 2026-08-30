@@ -1,9 +1,6 @@
 /**
- * Test data + a small Builder for describing a "Find trains" search.
- *
- * `TripSearchBuilder` keeps specs
- * readable ("a one-way trip from New York to Washington leaving in 14 days") and gives
- * us one place to evolve defaults as the form changes.
+ * Test data + a small Builder for describing a "Find trains" search — keeps specs readable
+ * and puts the defaults in one place to evolve as the form changes.
  */
 
 export type TripType = 'round-trip' | 'one-way' | 'multi-city';
@@ -165,16 +162,16 @@ export const expectedLegsFor = (trip: TripSearch): TripLeg[] => {
 
 /** The canonical New-York-anchored trip the submit smoke test uses for each trip type. */
 export const standardTripFor = (tripType: TripType): TripSearch => {
-  const base = TripSearchBuilder.aTrip()
+  const builder = TripSearchBuilder.aTrip()
     .from(STATIONS.newYork.query)
     .to(STATIONS.washington.query)
     .departingInDays(DEPART_LEAD_DAYS);
 
   switch (tripType) {
     case 'round-trip':
-      return base.roundTrip(RETURN_LEAD_DAYS).build();
+      return builder.roundTrip(RETURN_LEAD_DAYS).build();
     case 'multi-city':
-      return base
+      return builder
         .multiCity([
           { from: STATIONS.newYork.query, to: STATIONS.washington.query, departInDays: DEPART_LEAD_DAYS },
           { from: STATIONS.boston.query, to: STATIONS.philadelphia.query, departInDays: RETURN_LEAD_DAYS },
@@ -182,6 +179,6 @@ export const standardTripFor = (tripType: TripType): TripSearch => {
         .build();
     case 'one-way':
     default:
-      return base.oneWay().build();
+      return builder.oneWay().build();
   }
 };

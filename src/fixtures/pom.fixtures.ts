@@ -5,17 +5,9 @@ import { seedAmtrakConsent } from '../support/consent';
 import { mockAmtrakStationAutocomplete } from '../support/mocks/amtrak-routes';
 
 /**
- * Fixture-based Page Object injection.
- *
- * Specs import `test` / `expect` from THIS file (never from `@playwright/test` — the
- * ESLint guard enforces that). Every Page Object is created once per test and handed
- * to the spec through the test callback args, so specs never call `new SomePage()`.
- *
- * ➕ To add a page surface:
- *    1. Create `src/pages/<name>.page.ts` (extends BasePage).
- *    2. Add it to `PageObjects` below.
- *    3. Add a fixture entry in `base.extend(...)`.
- *    That is the only supported way to get a Page Object into a test.
+ * Fixture-based Page Object injection. Specs import `test` / `expect` from here (never from
+ * `@playwright/test` — lint-enforced); Page Objects are created once per test and handed in
+ * via the callback args. Adding a page surface: see docs/FRAMEWORK.md ➜ "Scaling".
  */
 export interface PageObjects {
   homePage: HomePage;
@@ -42,10 +34,8 @@ export const test = base.extend<PageObjects & WorkerOptions>({
 });
 
 /**
- * Widget-readiness gate. On the **live** lane a non-ready widget means Akamai blocked
- * the run (bot wall / outage) — skip with a clear reason instead of a wall of red.
- * On the **mocked** lane there is no bot wall to blame, so a non-ready widget is a real
- * regression (selector drift, app change) and must fail, not skip.
+ * Widget-readiness gate: on the **live** lane a non-ready widget means Akamai blocked the
+ * run, so skip with a reason; on the **mocked** lanes it's a real regression, so fail.
  */
 test.beforeEach(async ({ homePage, mockAmtrakApi }) => {
   if (await homePage.findTrainsForm.isReady()) {
