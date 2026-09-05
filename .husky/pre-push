@@ -1,0 +1,9 @@
+# Local fast-feedback gate: run the same guard rails CI enforces before code leaves
+# this machine. This mirrors the required `lint-and-typecheck` status check on `main` —
+# see docs/FRAMEWORK.md ➜ "Guard rails".
+#
+# This hook is convenience, not enforcement: it can be bypassed with `git push --no-verify`
+# or by never running `npm install`. The non-bypassable gate is the GitHub required status
+# check on `main`; this just catches mistakes seconds instead of minutes sooner.
+
+npm run check

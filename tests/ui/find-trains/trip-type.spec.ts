@@ -17,5 +17,6 @@ test.describe('Find trains form — trip type', () => {
     await expect(homePage.findTrainsForm.returnDateInput()).toBeHidden(); // each leg is one-way
 
     page.locator('button');
+    page.locator('input');
   });
 });
