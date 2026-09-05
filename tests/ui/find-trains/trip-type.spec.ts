@@ -8,11 +8,14 @@ import { test, expect } from '../../../src/fixtures/pom.fixtures';
 test.describe('Find trains form — trip type', () => {
   test('Choosing Multi-City turns the form into a multi-leg builder', { tag: '@smoke' }, async ({
     homePage,
+    page,
   }) => {
     await homePage.findTrainsForm.selectTripType('multi-city');
     await expect(homePage.findTrainsForm.tripTypeButton()).toContainText('Multi-City');
     await expect(homePage.findTrainsForm.addTripButton()).toBeVisible();
     await expect(homePage.findTrainsForm.removeTripButton()).toBeVisible();
     await expect(homePage.findTrainsForm.returnDateInput()).toBeHidden(); // each leg is one-way
+
+    page.locator('button');
   });
 });
