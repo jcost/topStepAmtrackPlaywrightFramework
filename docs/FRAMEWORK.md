@@ -115,7 +115,25 @@ the builder to return the canonical trip per bookable type (the parameterized su
 loops over it). `expectedLegsFor(trip)` is the matching pure function on the assertion
 side — turns a `TripSearch` into the legs the request should carry.
 
-## Guard rails (enforced by `npm run lint`)
+## Guard rails
+
+The rules themselves are ESLint (`npm run lint`). They are enforced at three points, each
+harder to skip than the last:
+
+| Layer | Mechanism | Bypassable? |
+| --- | --- | --- |
+| Editor / on demand | `npm run lint` / `npm run check` | only runs when invoked |
+| Local pre-push | `.husky/pre-push` runs `npm run check` before `git push` | yes — `git push --no-verify`, or a clone that never ran `npm install` |
+| **CI required check** | `lint-and-typecheck` job, set as a **required status check** on `main` (GitHub branch protection) | **no** — the merge button stays disabled until it is green |
+
+The pre-push hook is fast local feedback; the required status check is the actual gate. A
+client-side git hook can never be made unbypassable — that is a property of git, so the
+server-side check is what the PR relies on. Enabling it is a one-time repo setting:
+**Settings ➜ Branches ➜ add a rule for `main` ➜ Require status checks to pass ➜ select
+`lint-and-typecheck`** (add `e2e-chromium` too, and "Require a pull request before merging"
+on a shared repo).
+
+### The rules
 
 1. **No raw locators / no `new *Page()` in specs** — custom rule `pom/no-raw-locators`
    (`eslint-rules/pom-plugin.mjs`) flags `.getByRole(` / `.locator(` / `.$(` / … and
@@ -181,8 +199,10 @@ injection, "locators in Page Objects, assertions in specs", and the Builder — 
 
 ## Source control / branching
 
-Built solo, so commits went straight to `main`. In a team I'd branch off `develop`
+Built solo, so early commits went straight to `main`. In a team I'd branch off `develop`
 (company convention permitting): a short-lived `test/<area>` branch per change,
 PR-reviewed, merged to `develop`, then `develop` → `main` on an agreed cadence — `main`
 being what CI gates on. `npm run check` + `npm run test:mocked` are the same gate on any
-branch.
+branch, run locally by `.husky/pre-push` and in CI by the `lint-and-typecheck` +
+`e2e-chromium` jobs. Mark those two as required status checks on `main` so a red run
+physically blocks the merge (see *Guard rails*).

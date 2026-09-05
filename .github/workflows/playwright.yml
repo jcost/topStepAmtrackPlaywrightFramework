@@ -1,11 +1,19 @@
 name: E2E
 
 on:
+  # Run on every branch push (not just main) so a feature branch gets a red/green
+  # commit status before a PR even exists. `lint-and-typecheck` is the job to mark as a
+  # required status check on `main` — that is the non-bypassable guard (a local pre-push
+  # hook can be skipped with --no-verify; branch protection cannot). See docs/FRAMEWORK.md.
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
-    branches: [main]
   workflow_dispatch:
+
+# A newer push to the same branch cancels the previous in-flight run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 # Runners are UTC; the suite computes dates in Node and renders the calendar in the browser
 # at this timezone (`use.timezoneId`). Both must agree or the past-date test flips near midnight.

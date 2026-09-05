@@ -1,0 +1,45 @@
+# Local fast-feedback gate — the same guard rails CI enforces as `lint-and-typecheck`,
+# run before code leaves this machine. Convenience, not enforcement: skippable with
+# `git push --no-verify` or by a clone that never ran `npm install`. The non-bypassable
+# gate is the required status check on `main` (docs/FRAMEWORK.md ➜ "Guard rails").
+
+echo ""
+echo "──────────────────────────────────────────────────────────────────────"
+echo " pre-push: checking framework guard rails (npm run check)"
+echo "   • NO raw Playwright locators or 'new *Page()' in tests/**/*.spec.ts"
+echo "       — selectors live on Page Objects, reached through the fixture"
+echo "   • NO expect(...) inside src/pages/**  — assertions live in specs"
+echo "   • tsc --noEmit must pass"
+echo "──────────────────────────────────────────────────────────────────────"
+echo ""
+
+if npm run --silent check; then
+  echo ""
+  echo " ✔ guard rails passed — pushing."
+  echo ""
+  exit 0
+fi
+
+cat >&2 <<'EOF'
+
+ ✖ PUSH BLOCKED — a framework guard rail failed (see the errors above).
+
+   This is the same check CI runs as 'lint-and-typecheck', so pushing would
+   only fail there too. How to fix the common ones:
+
+   • "Raw locator .locator(...) / .getByRole(...) is not allowed in a test"
+       → add the selector as an arrow-function property on a Page Object in
+         src/pages/**, and call it via the injected fixture, e.g.
+         homePage.findTrainsForm.fromStationInput()
+
+   • "Assertions belong in tests, not Page Objects"
+       → return a Locator or a plain value from the Page Object and put the
+         expect(...) in the spec
+
+   • Type errors → run 'npm run typecheck' for the full list
+
+   Re-check locally:            npm run check
+   Emergency override (never on a shared branch):   git push --no-verify
+
+EOF
+exit 1

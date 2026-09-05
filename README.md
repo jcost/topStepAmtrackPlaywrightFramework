@@ -143,15 +143,23 @@ npm run check               # lint + typecheck
   1. a raw locator (`page.getByRole(...)`, `.locator(...)`, …) or `new SomethingPage()`
      in a `*.spec.ts` fails lint — you must add the locator to a Page Object and inject it;
   2. `expect(...)` inside `src/pages/**` fails lint — assertions belong in tests.
+
+  These run at three points: on demand (`npm run check`), locally before every push
+  (`.husky/pre-push`, installed by `npm install`), and in CI. Make the CI
+  `lint-and-typecheck` job a **required status check** on `main` and a failing guard
+  blocks the merge — the pre-push hook alone can be skipped with `--no-verify`. See
+  [docs/FRAMEWORK.md](docs/FRAMEWORK.md) → *Guard rails*.
 - **Builder pattern** for test data: `TripSearchBuilder.aTrip().roundTrip().from(...).build()`.
 
 Full rationale in [docs/FRAMEWORK.md](docs/FRAMEWORK.md).
 
 ## Continuous integration
 
-[`.github/workflows/playwright.yml`](.github/workflows/playwright.yml) runs `lint` +
-`typecheck`, then `npm test` (the `e2e-chromium` gate) with `test:mobile` and `test:live`
-as non-blocking signal jobs, and uploads each HTML report as an artifact.
+[`.github/workflows/playwright.yml`](.github/workflows/playwright.yml) runs on every branch
+push and every PR: `lint` + `typecheck`, then `npm test` (the `e2e-chromium` gate) with
+`test:mobile` and `test:live` as non-blocking signal jobs, and uploads each HTML report as
+an artifact. Mark `lint-and-typecheck` and `e2e-chromium` as **required status checks** on
+`main` (Settings → Branches) so the guards actually block a merge.
 
 ## Troubleshooting
 
